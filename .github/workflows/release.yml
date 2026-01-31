@@ -67,8 +67,11 @@ jobs:
         run: |
           cd artifacts
           for dir in */; do
-            mv "$dir"* .
-            rmdir "$dir"
+            basename="${dir%/}"
+            if [ -f "$dir$basename" ]; then
+              mv -f "$dir$basename" "$basename"
+              rmdir "$dir"
+            fi
           done
           ls -la
 
