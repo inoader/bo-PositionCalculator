@@ -385,7 +385,7 @@ fn print_result_arbitrage(odds1: f64, odds2: f64, result: &ArbitrageResult, capi
             let total_return = cap * (1.0 + result.arbitrage_profit);
             println!("    ├─ 方案1投注: {:.2}", stake1);
             println!("    ├─ 方案2投注: {:.2}", stake2);
-            println!("    └─ 获胜总回报: {:.2} (收益率: {:.2}%)", total_return, result.arbitrage_profit * 100.0);
+            println!("    └─ 获胜总回报: {:.2} (收益: {:.2})", total_return, total_return - cap);
             println!();
         }
     } else {
@@ -432,7 +432,7 @@ fn print_result_multi_arbitrage(odds: &[f64], result: &MultiArbitrageResult, cap
                 let stake = cap * ratio;
                 println!("    ├─ 标的{}投注: {:.2}", i + 1, stake);
             }
-            println!("    └─ 获胜总回报: {:.2} (收益率: {:.2}%)", total_return, result.arbitrage_profit * 100.0);
+            println!("    └─ 获胜总回报: {:.2} (收益: {:.2})", total_return, total_return - cap);
             println!();
         }
     } else {
@@ -800,22 +800,25 @@ fn interactive_multi_arbitrage() {
         };
 
         let mut odds = Vec::new();
-        for i in 1..=count {
-            println!("请输入标的{}的赔率:", i);
-            print!("> ");
-            io::stdout().flush().unwrap();
+        'outer: loop {
+            for i in (odds.len() + 1)..=count {
+                println!("请输入标的{}的赔率:", i);
+                print!("> ");
+                io::stdout().flush().unwrap();
 
-            let mut odds_input = String::new();
-            io::stdin().read_line(&mut odds_input).unwrap();
+                let mut odds_input = String::new();
+                io::stdin().read_line(&mut odds_input).unwrap();
 
-            let o: f64 = match odds_input.trim().parse() {
-                Ok(n) if n > 1.0 => n,
-                _ => {
-                    println!("✗ 赔率必须大于 1.0\n");
-                    continue;
-                }
-            };
-            odds.push(o);
+                let o: f64 = match odds_input.trim().parse() {
+                    Ok(n) if n > 1.0 => n,
+                    _ => {
+                        println!("✗ 赔率必须大于 1.0\n");
+                        continue 'outer;
+                    }
+                };
+                odds.push(o);
+            }
+            break;
         }
 
         println!("请输入本金 (可选，直接回车跳过):");
