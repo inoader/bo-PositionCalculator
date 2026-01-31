@@ -1,12 +1,12 @@
 [package]
-name = "kelly-calculator"
+name = "bo"
 version = "0.1.0"
 edition = "2021"
-description = "A Kelly Criterion calculator with Polymarket support"
-authors = ["Claude"]
+description = "凯利公式计算器 - 投注与交易仓位管理工具"
+authors = ["inoader"]
 
 [dependencies]
 
 [[bin]]
-name = "kelly"
+name = "bo"
 path = "src/main.rs"

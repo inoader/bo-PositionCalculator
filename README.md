@@ -1,68 +1,90 @@
-# Kelly Calculator
+# bo - 凯利公式计算器
 
-A command-line Kelly Criterion calculator with Polymarket support.
+支持标准投注、Polymarket 预测市场和股票交易的仓位管理工具。
 
-## Features
+## 功能
 
-- Standard Kelly Criterion calculation (odds + win rate)
-- Polymarket mode (market price + your probability)
-- Interactive and CLI modes
-- Capital allocation suggestions (full, half, quarter Kelly)
+- **标准模式**: 赔率 + 胜率计算凯利公式
+- **Polymarket 模式**: 针对预测市场优化
+- **股票交易模式**: 基于买入价/止盈价/止损价计算仓位
+- 交互式和命令行模式
+- 仓位建议（全凯利、半凯利、1/4凯利）
 
-## Installation
+## 安装
 
 ```bash
 cargo build --release
 ```
 
-The binary will be at `target/release/kelly`.
+二进制文件位于 `target/release/bo`。
 
-## Usage
+## 使用
 
-### Standard Mode
-
-```bash
-# Interactive
-./kelly
-
-# CLI
-./kelly <odds> <win_rate> [capital]
-
-# Examples
-./kelly 2.0 60              # Odds 2.0, 60% win rate
-./kelly 2.0 60 10000        # With 10000 capital
-```
-
-### Polymarket Mode
+### 标准模式
 
 ```bash
-# Interactive
-./kelly -p
-
-# CLI
-./kelly -p <market_price> <your_probability> [capital]
-
-# Examples
-./kelly -p 60 75            # Market price 60c, you think 75%
-./kelly -p 60 75 1000       # With 1000 capital
+./bo <赔率> <胜率> [本金]
 ```
 
-## Kelly Criterion Formula
+示例：
+```bash
+./bo 2.0 60              # 赔率2.0，胜率60%
+./bo 2.0 60 10000        # 本金10000
+```
 
-For standard mode:
+### Polymarket 模式
+
+```bash
+./bo -p <市场价格> <你的概率> [本金]
+```
+
+示例：
+```bash
+./bo -p 60 75            # 市场价格60c，你认为75%
+./bo -p 60 75 1000       # 本金1000
+```
+
+### 股票交易模式
+
+```bash
+./bo -s <当前价> <止盈价> <止损价> <胜率> [本金]
+```
+
+示例：
+```bash
+./bo -s 100 120 90 60            # 当前价100，止盈120，止损90，胜率60%
+./bo -s 100 120 90 60 10000       # 本金10000
+```
+
+### 交互式模式
+
+```bash
+./bo              # 标准模式
+./bo -p           # Polymarket
+./bo -s           # 股票交易
+```
+
+## 凯利公式
+
+**标准模式：**
 ```
 f* = (bp - q) / b
 ```
-where:
-- `b` = net odds (odds - 1)
-- `p` = probability of winning
-- `q` = probability of losing (1 - p)
+- `b` = 净赔率 (赔率 - 1)
+- `p` = 胜率
+- `q` = 败率 (1 - p)
 
-For Polymarket:
+**Polymarket：**
 ```
-f* = (your_probability - market_price) / (1 - market_price)
+f* = (你的概率 - 市场价格) / (1 - 市场价格)
 ```
 
-## License
+**股票交易：**
+```
+b = (止盈价 - 当前价) / (当前价 - 止损价)  // 盈亏比
+f* = (bp - q) / b
+```
+
+## 许可证
 
 MIT
