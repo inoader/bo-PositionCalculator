@@ -62,18 +62,14 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           path: artifacts
+          pattern: '*'
+          merge-multiple: false
 
-      - name: Flatten artifacts
+      - name: Prepare release files
         run: |
-          cd artifacts
-          for dir in */; do
-            basename="${dir%/}"
-            if [ -f "$dir$basename" ]; then
-              mv -f "$dir$basename" "$basename"
-              rmdir "$dir"
-            fi
-          done
-          ls -la
+          mkdir -p release
+          find artifacts -type f -exec cp {} release/ \;
+          ls -la release/
 
       - name: Create release
         uses: softprops/action-gh-release@v2
@@ -108,6 +104,6 @@ jobs:
             # 多标的套利（3个标的）
             ./bo -A 3 2.0 3.5 4.0
             ```
-          files: artifacts/*
+          files: release/*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
