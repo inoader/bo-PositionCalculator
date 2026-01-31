@@ -73,8 +73,10 @@ struct ArbitrageResult {
     has_arbitrage: bool,
     /// 隐含概率之和
     total_implied_prob: f64,
-    /// 套利收益率
+    /// 套利收益率（如果存在套利）
     arbitrage_profit: f64,
+    /// 抽水率（如果不存在套利）
+    juice_rate: f64,
     /// 方案1的投注比例
     stake1_ratio: f64,
     /// 方案2的投注比例
@@ -87,8 +89,10 @@ struct MultiArbitrageResult {
     has_arbitrage: bool,
     /// 隐含概率之和
     total_implied_prob: f64,
-    /// 套利收益率
+    /// 套利收益率（如果存在套利）
     arbitrage_profit: f64,
+    /// 抽水率（如果不存在套利）
+    juice_rate: f64,
     /// 各标的投注比例
     stake_ratios: Vec<f64>,
 }
@@ -117,14 +121,19 @@ fn calculate_arbitrage(odds1: f64, odds2: f64) -> ArbitrageResult {
             has_arbitrage: true,
             total_implied_prob,
             arbitrage_profit,
+            juice_rate: 0.0,
             stake1_ratio,
             stake2_ratio,
         }
     } else {
+        // 抽水率 = 总隐含概率 - 1
+        let juice_rate = total_implied_prob - 1.0;
+
         ArbitrageResult {
             has_arbitrage: false,
             total_implied_prob,
             arbitrage_profit: 0.0,
+            juice_rate,
             stake1_ratio: 0.0,
             stake2_ratio: 0.0,
         }
@@ -147,13 +156,18 @@ fn calculate_multi_arbitrage(odds: &[f64]) -> MultiArbitrageResult {
             has_arbitrage: true,
             total_implied_prob,
             arbitrage_profit,
+            juice_rate: 0.0,
             stake_ratios,
         }
     } else {
+        // 抽水率 = 总隐含概率 - 1
+        let juice_rate = total_implied_prob - 1.0;
+
         MultiArbitrageResult {
             has_arbitrage: false,
             total_implied_prob,
             arbitrage_profit: 0.0,
+            juice_rate,
             stake_ratios: vec![0.0; odds.len()],
         }
     }
@@ -207,7 +221,7 @@ fn print_title_stock() {
 /// 打印套利标题
 fn print_title_arbitrage() {
     separator();
-    println!("                        套利计算器");
+    println!("                      套利/抽水计算器");
     separator();
     println!();
 }
@@ -358,7 +372,7 @@ fn print_result_stock(info: &StockInfo, win_rate: f64, result: &KellyResult, cap
 fn print_result_arbitrage(odds1: f64, odds2: f64, result: &ArbitrageResult, capital: Option<f64>) {
     println!();
     separator();
-    println!("                        套利计算结果");
+    println!("                      套利/抽水计算结果");
     separator();
     println!();
     println!("  输入参数:");
@@ -390,7 +404,7 @@ fn print_result_arbitrage(odds1: f64, odds2: f64, result: &ArbitrageResult, capi
         }
     } else {
         println!("  ✗ 无套利机会");
-        println!("    └─ 隐含概率之和超过 100%，无法套利");
+        println!("    └─ 庄家抽水: {:.2}%", result.juice_rate * 100.0);
         println!();
     }
 
@@ -401,7 +415,7 @@ fn print_result_arbitrage(odds1: f64, odds2: f64, result: &ArbitrageResult, capi
 fn print_result_multi_arbitrage(odds: &[f64], result: &MultiArbitrageResult, capital: Option<f64>) {
     println!();
     separator();
-    println!("                        多标的套利计算结果");
+    println!("                      多标的套利/抽水计算结果");
     separator();
     println!();
     println!("  输入参数 ({}个标的):", odds.len());
@@ -437,7 +451,7 @@ fn print_result_multi_arbitrage(odds: &[f64], result: &MultiArbitrageResult, cap
         }
     } else {
         println!("  ✗ 无套利机会");
-        println!("    └─ 隐含概率之和超过 100%，无法套利");
+        println!("    └─ 庄家抽水: {:.2}%", result.juice_rate * 100.0);
         println!();
     }
 
