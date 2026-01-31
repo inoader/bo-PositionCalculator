@@ -1,0 +1,12 @@
+[package]
+name = "kelly-calculator"
+version = "0.1.0"
+edition = "2021"
+description = "A Kelly Criterion calculator with Polymarket support"
+authors = ["Claude"]
+
+[dependencies]
+
+[[bin]]
+name = "kelly"
+path = "src/main.rs"
