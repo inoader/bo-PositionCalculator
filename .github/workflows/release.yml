@@ -1,0 +1,104 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            artifact: bo-x86_64-linux
+          - os: ubuntu-latest
+            target: aarch64-unknown-linux-gnu
+            artifact: bo-aarch64-linux
+          - os: macos-latest
+            target: x86_64-apple-darwin
+            artifact: bo-x86_64-apple-darwin
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            artifact: bo-aarch64-apple-darwin
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            artifact: bo-x86_64-windows.exe
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Build
+        run: cargo build --release --target ${{ matrix.target }}
+
+      - name: Prepare artifact
+        run: |
+          cd target/${{ matrix.target }}/release
+          if [ "${{ matrix.os }}" = "windows-latest" ]; then
+            cp bo.exe ${{ matrix.artifact }}
+          else
+            cp bo ${{ matrix.artifact }}
+          fi
+        shell: bash
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: target/${{ matrix.target }}/release/${{ matrix.artifact }}
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          body: |
+            ## 凯利公式计算器
+
+            一个简洁的命令行工具，帮助投注者和交易者计算最优仓位。
+
+            ### 功能特性
+
+            - **标准凯利公式**: 输入赔率和胜率，计算最优投注比例
+            - **Polymarket 模式**: 针对预测市场优化的凯利计算
+            - **股票交易模式**: 根据止盈止损价格和盈亏比计算仓位
+            - **套利计算**: 检测两个或多个标的间的套利机会，显示庄家抽水率
+
+            ### 使用示例
+
+            ```bash
+            # 标准模式：赔率2.0，胜率60%
+            ./bo 2.0 60
+
+            # Polymarket：市场价格60c，你认为75%
+            ./bo -p 60 75
+
+            # 股票：当前价100，止盈120，止损90，胜率60%
+            ./bo -s 100 120 90 60
+
+            # 套利检测
+            ./bo -a 1.9 2.1
+
+            # 多标的套利（3个标的）
+            ./bo -A 3 2.0 3.5 4.0
+            ```
+          files: artifacts/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
