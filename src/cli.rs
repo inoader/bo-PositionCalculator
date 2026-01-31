@@ -250,7 +250,7 @@ pub fn is_interactive_call(args: &[String]) -> bool {
         return true;
     }
 
-    let flags = ["-p", "-s", "-a"];
+    let flags = ["-p", "-s", "-a", "-A"];
     for flag in &flags {
         if args.iter().any(|a| a == *flag) && args.len() == 2 {
             return true;
