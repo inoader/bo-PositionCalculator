@@ -47,13 +47,7 @@ mv bo-aarch64-apple-darwin bo
 # 下载 bo-x86_64-windows.exe 并重命名为 bo.exe
 ```
 
-### 方式二：使用 Cargo 安装
-
-```bash
-cargo install bo
-```
-
-### 方式三：从源码编译
+### 方式二：从源码编译
 
 ```bash
 git clone https://github.com/inoader/bo.git
@@ -233,6 +227,3 @@ f* = (隐含赔率 × 你的概率 - (1 - 你的概率)) / 隐含赔率
 标的i投注比例 = (1 / 赔率i) / Σ隐含概率
 ```
 
-## License
-
-MIT
