@@ -1,7 +1,7 @@
 //! 显示输出相关功能
 
 use crate::types::{
-    ArbitrageResult, KellyResult, MultiArbitrageResult, PortfolioBet, PortfolioKellyResult,
+    ArbitrageResult, KellyResult, MultiArbitrageResult, PortfolioKellyResult, PortfolioLeg,
     StockInfo,
 };
 
@@ -454,7 +454,7 @@ pub fn print_result_multi_arbitrage(
 
 /// 打印组合凯利结果
 pub fn print_result_portfolio(
-    bets: &[PortfolioBet],
+    legs: &[PortfolioLeg],
     result: &PortfolioKellyResult,
     capital: Option<f64>,
 ) {
@@ -463,14 +463,14 @@ pub fn print_result_portfolio(
     println!("                      组合凯利计算结果");
     separator();
     println!();
-    println!("  输入参数 ({}个标的):", bets.len());
-    for (i, bet) in bets.iter().enumerate() {
-        let edge = bet.win_rate * (bet.odds - 1.0) - (1.0 - bet.win_rate);
+    println!("  输入参数 ({}个标的):", legs.len());
+    for (i, leg) in legs.iter().enumerate() {
+        let edge = leg.win_prob * leg.win_return + (1.0 - leg.win_prob) * leg.loss_return;
         println!(
-            "    ├─ 标的{}: 赔率 {:.3} / 胜率 {} / 单标EV {:.2}%",
+            "    ├─ 标的{} [{}]: {} / EV {:.2}%",
             i + 1,
-            bet.odds,
-            format_pct(bet.win_rate),
+            leg.source,
+            leg.summary,
             edge * 100.0
         );
     }
@@ -716,17 +716,20 @@ pub fn print_result_multi_arbitrage_json(
 
 /// 打印组合凯利 JSON 结果
 pub fn print_result_portfolio_json(
-    bets: &[PortfolioBet],
+    legs: &[PortfolioLeg],
     result: &PortfolioKellyResult,
     capital: Option<f64>,
 ) {
-    let bets_json = bets
+    let legs_json = legs
         .iter()
-        .map(|bet| {
+        .map(|leg| {
             format!(
-                r#"{{"odds":{},"win_rate":{}}}"#,
-                json_number(bet.odds),
-                json_number(bet.win_rate)
+                r#"{{"source":"{}","summary":"{}","win_prob":{},"win_return":{},"loss_return":{}}}"#,
+                json_escape(&leg.source),
+                json_escape(&leg.summary),
+                json_number(leg.win_prob),
+                json_number(leg.win_return),
+                json_number(leg.loss_return)
             )
         })
         .collect::<Vec<String>>()
@@ -750,8 +753,8 @@ pub fn print_result_portfolio_json(
     };
 
     println!(
-        r#"{{"ok":true,"mode":"portfolio_kelly","inputs":{{"bets":[{}],"capital":{}}},"result":{{"allocations":{},"total_allocation":{},"expected_log_growth":{},"expected_arithmetic_return":{},"worst_case_multiplier":{},"converged":{},"iterations":{}}},"sizing":{}}}"#,
-        bets_json,
+        r#"{{"ok":true,"mode":"portfolio_kelly","inputs":{{"legs":[{}],"capital":{}}},"result":{{"allocations":{},"total_allocation":{},"expected_log_growth":{},"expected_arithmetic_return":{},"worst_case_multiplier":{},"converged":{},"iterations":{}}},"sizing":{}}}"#,
+        legs_json,
         json_optional_number(capital),
         json_array(&result.allocations),
         json_number(result.total_allocation),
@@ -787,6 +790,10 @@ pub fn print_usage() {
     println!("  bo -A <标的数量> <赔率1> ... <赔率N> [本金]  # 多标的套利");
     println!("  bo -k                         # 组合凯利交互式");
     println!("  bo -k <标的数量> <赔率1> <胜率1> ... <赔率N> <胜率N> [本金]  # 组合凯利");
+    println!("  bo -k <descriptor1> <descriptor2> ... [本金]  # 跨模式组合凯利");
+    println!(
+        "     descriptor: std:赔率:胜率 | pm:市场价:概率 | stock:入场:止盈:止损:胜率 | arb:赔率1:赔率2 | marb:赔率1,赔率2,..."
+    );
     println!();
     println!("示例:");
     println!("  bo 2.0 60                    # 赔率2.0，胜率60%");
@@ -807,4 +814,6 @@ pub fn print_usage() {
     println!();
     println!("  bo -k 2 2.0 60 2.5 55         # 2个标的组合凯利");
     println!("  bo -k 2 2.0 60 2.5 55 10000   # 本金10000");
+    println!("  bo -k std:2.0:60 pm:60:75 stock:100:120:90:60 10000");
+    println!("  bo --json -k std:2.0:60 arb:2.1:2.2 marb:2.5,4.0,5.0 10000");
 }

@@ -10,7 +10,7 @@ use crate::display::{
 };
 use crate::kelly::{build_stock_info, kelly_criterion, kelly_polymarket, kelly_stock};
 use crate::portfolio::calculate_portfolio_kelly;
-use crate::types::PortfolioBet;
+use crate::portfolio_input::parse_portfolio_leg_descriptor;
 use crate::validation::{parse_market_price, parse_odds, parse_percent, parse_positive};
 
 /// 标准交互式模式
@@ -423,35 +423,24 @@ pub fn interactive_portfolio() {
         let mut bets = Vec::with_capacity(count);
         'outer: loop {
             for i in (bets.len() + 1)..=count {
-                println!("请输入标的{}赔率 (>1.0):", i);
+                println!(
+                    "请输入标的{}描述 (std:2.0:60 / pm:60:75 / stock:100:120:90:60 / arb:2.1:2.2 / marb:2.5,4.0,5.0):",
+                    i
+                );
                 print!("> ");
                 io::stdout().flush().unwrap();
 
-                let mut odds_input = String::new();
-                io::stdin().read_line(&mut odds_input).unwrap();
-                let odds = match parse_odds(odds_input.trim(), "赔率") {
-                    Ok(n) => n,
+                let mut descriptor_input = String::new();
+                io::stdin().read_line(&mut descriptor_input).unwrap();
+                let bet = match parse_portfolio_leg_descriptor(descriptor_input.trim()) {
+                    Ok(v) => v,
                     Err(e) => {
                         println!("✗ {}\n", e);
                         continue 'outer;
                     }
                 };
 
-                println!("请输入标的{}胜率 (0-100):", i);
-                print!("> ");
-                io::stdout().flush().unwrap();
-
-                let mut win_rate_input = String::new();
-                io::stdin().read_line(&mut win_rate_input).unwrap();
-                let win_rate = match parse_percent(win_rate_input.trim(), "胜率") {
-                    Ok(n) => n,
-                    Err(e) => {
-                        println!("✗ {}\n", e);
-                        continue 'outer;
-                    }
-                };
-
-                bets.push(PortfolioBet { odds, win_rate });
+                bets.push(bet);
             }
             break;
         }

@@ -54,13 +54,19 @@ pub struct StockInfo {
     pub ratio: f64,
 }
 
-/// 组合凯利输入（单个标的）
+/// 组合凯利输入（单个标的/策略腿）
 #[derive(Debug, Clone)]
-pub struct PortfolioBet {
-    /// 十进制赔率（必须 > 1）
-    pub odds: f64,
+pub struct PortfolioLeg {
+    /// 来源类型（standard/polymarket/stock/arbitrage/...）
+    pub source: String,
+    /// 参数摘要，便于展示
+    pub summary: String,
     /// 胜率（0-1）
-    pub win_rate: f64,
+    pub win_prob: f64,
+    /// 胜利场景收益率（相对本金）
+    pub win_return: f64,
+    /// 失败场景收益率（相对本金）
+    pub loss_return: f64,
 }
 
 /// 组合凯利计算结果

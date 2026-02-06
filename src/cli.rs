@@ -9,7 +9,8 @@ use crate::display::{
 };
 use crate::kelly::{build_stock_info, kelly_criterion, kelly_polymarket, kelly_stock};
 use crate::portfolio::calculate_portfolio_kelly;
-use crate::types::PortfolioBet;
+use crate::portfolio_input::{build_standard_leg, parse_portfolio_leg_descriptor};
+use crate::types::PortfolioLeg;
 use crate::validation::{parse_market_price, parse_odds, parse_percent, parse_positive};
 
 #[derive(Clone, Copy)]
@@ -32,76 +33,108 @@ fn emit_error(output: OutputFormat, message: &str) {
     }
 }
 
-/// 标准凯利 CLI 模式
-fn cli_mode(odds: f64, win_rate: f64, capital: Option<f64>, output: OutputFormat) {
-    let result = kelly_criterion(odds, win_rate);
-    if output.is_json() {
-        print_result_json(odds, win_rate, &result, capital);
-    } else {
-        print_result(odds, win_rate, &result, capital);
-    }
+enum ModeRequest {
+    Standard {
+        odds: f64,
+        win_rate: f64,
+        capital: Option<f64>,
+    },
+    Polymarket {
+        market_price: f64,
+        your_probability: f64,
+        capital: Option<f64>,
+    },
+    Stock {
+        entry_price: f64,
+        target_price: f64,
+        stop_loss: f64,
+        win_rate: f64,
+        capital: Option<f64>,
+    },
+    Arbitrage {
+        odds1: f64,
+        odds2: f64,
+        capital: Option<f64>,
+    },
+    MultiArbitrage {
+        odds: Vec<f64>,
+        capital: Option<f64>,
+    },
+    Portfolio {
+        legs: Vec<PortfolioLeg>,
+        capital: Option<f64>,
+    },
 }
 
-/// Polymarket CLI 模式
-fn cli_mode_polymarket(
-    market_price: f64,
-    your_probability: f64,
-    capital: Option<f64>,
-    output: OutputFormat,
-) {
-    let result = kelly_polymarket(market_price, your_probability);
-    if output.is_json() {
-        print_result_polymarket_json(market_price, your_probability, &result, capital);
-    } else {
-        print_result_polymarket(market_price, your_probability, &result, capital);
-    }
-}
-
-/// 股票 CLI 模式
-fn cli_mode_stock(
-    entry_price: f64,
-    target_price: f64,
-    stop_loss: f64,
-    win_rate: f64,
-    capital: Option<f64>,
-    output: OutputFormat,
-) {
-    let info = build_stock_info(entry_price, target_price, stop_loss);
-    let result = kelly_stock(entry_price, target_price, stop_loss, win_rate);
-    if output.is_json() {
-        print_result_stock_json(&info, win_rate, &result, capital);
-    } else {
-        print_result_stock(&info, win_rate, &result, capital);
-    }
-}
-
-/// 套利 CLI 模式
-fn cli_mode_arbitrage(odds1: f64, odds2: f64, capital: Option<f64>, output: OutputFormat) {
-    let result = calculate_arbitrage(odds1, odds2);
-    if output.is_json() {
-        print_result_arbitrage_json(odds1, odds2, &result, capital);
-    } else {
-        print_result_arbitrage(odds1, odds2, &result, capital);
-    }
-}
-
-/// 多标的套利 CLI 模式
-fn cli_mode_multi_arbitrage(odds: Vec<f64>, capital: Option<f64>, output: OutputFormat) {
-    let result = calculate_multi_arbitrage(&odds);
-    if output.is_json() {
-        print_result_multi_arbitrage_json(&odds, &result, capital);
-    } else {
-        print_result_multi_arbitrage(&odds, &result, capital);
-    }
-}
-
-/// 组合凯利 CLI 模式
-fn cli_mode_portfolio(bets: Vec<PortfolioBet>, capital: Option<f64>, output: OutputFormat) {
-    let result = calculate_portfolio_kelly(&bets);
-    if output.is_json() {
-        print_result_portfolio_json(&bets, &result, capital);
-    } else {
-        print_result_portfolio(&bets, &result, capital);
+fn execute_mode(mode: ModeRequest, output: OutputFormat) {
+    match mode {
+        ModeRequest::Standard {
+            odds,
+            win_rate,
+            capital,
+        } => {
+            let result = kelly_criterion(odds, win_rate);
+            if output.is_json() {
+                print_result_json(odds, win_rate, &result, capital);
+            } else {
+                print_result(odds, win_rate, &result, capital);
+            }
+        }
+        ModeRequest::Polymarket {
+            market_price,
+            your_probability,
+            capital,
+        } => {
+            let result = kelly_polymarket(market_price, your_probability);
+            if output.is_json() {
+                print_result_polymarket_json(market_price, your_probability, &result, capital);
+            } else {
+                print_result_polymarket(market_price, your_probability, &result, capital);
+            }
+        }
+        ModeRequest::Stock {
+            entry_price,
+            target_price,
+            stop_loss,
+            win_rate,
+            capital,
+        } => {
+            let info = build_stock_info(entry_price, target_price, stop_loss);
+            let result = kelly_stock(entry_price, target_price, stop_loss, win_rate);
+            if output.is_json() {
+                print_result_stock_json(&info, win_rate, &result, capital);
+            } else {
+                print_result_stock(&info, win_rate, &result, capital);
+            }
+        }
+        ModeRequest::Arbitrage {
+            odds1,
+            odds2,
+            capital,
+        } => {
+            let result = calculate_arbitrage(odds1, odds2);
+            if output.is_json() {
+                print_result_arbitrage_json(odds1, odds2, &result, capital);
+            } else {
+                print_result_arbitrage(odds1, odds2, &result, capital);
+            }
+        }
+        ModeRequest::MultiArbitrage { odds, capital } => {
+            let result = calculate_multi_arbitrage(&odds);
+            if output.is_json() {
+                print_result_multi_arbitrage_json(&odds, &result, capital);
+            } else {
+                print_result_multi_arbitrage(&odds, &result, capital);
+            }
+        }
+        ModeRequest::Portfolio { legs, capital } => {
+            let result = calculate_portfolio_kelly(&legs);
+            if output.is_json() {
+                print_result_portfolio_json(&legs, &result, capital);
+            } else {
+                print_result_portfolio(&legs, &result, capital);
+            }
+        }
     }
 }
 
@@ -168,7 +201,14 @@ fn handle_standard(args: Vec<String>, output: OutputFormat) {
                     return;
                 }
             };
-            cli_mode(odds, win_rate, None, output);
+            execute_mode(
+                ModeRequest::Standard {
+                    odds,
+                    win_rate,
+                    capital: None,
+                },
+                output,
+            );
         }
         4 => {
             let odds = match parse_odds(&args[1], "赔率") {
@@ -192,7 +232,14 @@ fn handle_standard(args: Vec<String>, output: OutputFormat) {
                     return;
                 }
             };
-            cli_mode(odds, win_rate, Some(capital), output);
+            execute_mode(
+                ModeRequest::Standard {
+                    odds,
+                    win_rate,
+                    capital: Some(capital),
+                },
+                output,
+            );
         }
         _ => {
             emit_error(output, "参数错误");
@@ -225,7 +272,14 @@ fn handle_polymarket(args: Vec<String>, output: OutputFormat) {
                     return;
                 }
             };
-            cli_mode_polymarket(market_price, your_prob, None, output);
+            execute_mode(
+                ModeRequest::Polymarket {
+                    market_price,
+                    your_probability: your_prob,
+                    capital: None,
+                },
+                output,
+            );
         }
         4 => {
             let market_price = match parse_market_price(pm_args[1]) {
@@ -249,7 +303,14 @@ fn handle_polymarket(args: Vec<String>, output: OutputFormat) {
                     return;
                 }
             };
-            cli_mode_polymarket(market_price, your_prob, Some(capital), output);
+            execute_mode(
+                ModeRequest::Polymarket {
+                    market_price,
+                    your_probability: your_prob,
+                    capital: Some(capital),
+                },
+                output,
+            );
         }
         _ => {
             emit_error(output, "Polymarket 模式参数错误");
@@ -305,7 +366,16 @@ fn handle_stock(args: Vec<String>, output: OutputFormat) {
                     "参数错误: 止盈价必须大于当前价，止损价必须小于当前价",
                 );
             } else {
-                cli_mode_stock(entry, target, stop, win_rate, None, output);
+                execute_mode(
+                    ModeRequest::Stock {
+                        entry_price: entry,
+                        target_price: target,
+                        stop_loss: stop,
+                        win_rate,
+                        capital: None,
+                    },
+                    output,
+                );
             }
         }
         6 => {
@@ -351,7 +421,16 @@ fn handle_stock(args: Vec<String>, output: OutputFormat) {
                     "参数错误: 止盈价必须大于当前价，止损价必须小于当前价",
                 );
             } else {
-                cli_mode_stock(entry, target, stop, win_rate, Some(capital), output);
+                execute_mode(
+                    ModeRequest::Stock {
+                        entry_price: entry,
+                        target_price: target,
+                        stop_loss: stop,
+                        win_rate,
+                        capital: Some(capital),
+                    },
+                    output,
+                );
             }
         }
         _ => {
@@ -387,7 +466,14 @@ fn handle_arbitrage(args: Vec<String>, output: OutputFormat) {
                     return;
                 }
             };
-            cli_mode_arbitrage(odds1, odds2, None, output);
+            execute_mode(
+                ModeRequest::Arbitrage {
+                    odds1,
+                    odds2,
+                    capital: None,
+                },
+                output,
+            );
         }
         4 => {
             let odds1 = match parse_odds(a_args[1], "赔率1") {
@@ -411,7 +497,14 @@ fn handle_arbitrage(args: Vec<String>, output: OutputFormat) {
                     return;
                 }
             };
-            cli_mode_arbitrage(odds1, odds2, Some(capital), output);
+            execute_mode(
+                ModeRequest::Arbitrage {
+                    odds1,
+                    odds2,
+                    capital: Some(capital),
+                },
+                output,
+            );
         }
         _ => {
             emit_error(output, "套利模式参数错误");
@@ -498,7 +591,7 @@ fn handle_multi_arbitrage(args: Vec<String>, output: OutputFormat) {
         None
     };
 
-    cli_mode_multi_arbitrage(odds, capital, output);
+    execute_mode(ModeRequest::MultiArbitrage { odds, capital }, output);
 }
 
 fn handle_portfolio(args: Vec<String>, output: OutputFormat) {
@@ -514,6 +607,55 @@ fn handle_portfolio(args: Vec<String>, output: OutputFormat) {
         return;
     }
 
+    // 新格式: `-k <descriptor1> <descriptor2> ... [本金]`
+    // descriptor 支持: std/pm/stock/arb/marb
+    if p_args[1].parse::<usize>().is_err() {
+        let mut end = p_args.len();
+        let mut capital = None;
+
+        if end > 2 && !p_args[end - 1].contains(':') {
+            match parse_positive(p_args[end - 1], "本金") {
+                Ok(v) => {
+                    capital = Some(v);
+                    end -= 1;
+                }
+                Err(e) => {
+                    emit_error(output, &format!("组合标的描述错误或本金错误: {}", e));
+                    return;
+                }
+            }
+        }
+
+        let mut legs = Vec::new();
+        for token in &p_args[1..end] {
+            if !token.contains(':') {
+                emit_error(output, "组合标的格式错误，示例: std:2.0:60");
+                return;
+            }
+            let leg = match parse_portfolio_leg_descriptor(token) {
+                Ok(v) => v,
+                Err(e) => {
+                    emit_error(output, &e);
+                    return;
+                }
+            };
+            legs.push(leg);
+        }
+
+        if legs.len() < 2 {
+            emit_error(output, "组合凯利至少需要 2 个标的");
+            return;
+        }
+        if legs.len() > 12 {
+            emit_error(output, "组合凯利最多支持 12 个标的");
+            return;
+        }
+
+        execute_mode(ModeRequest::Portfolio { legs, capital }, output);
+        return;
+    }
+
+    // 兼容旧格式: `-k <数量> <赔率1> <胜率1> ... <赔率N> <胜率N> [本金]`
     let count: usize = match p_args[1].parse() {
         Ok(n) if (2..=12).contains(&n) => n,
         Ok(_) => {
@@ -540,13 +682,14 @@ fn handle_portfolio(args: Vec<String>, output: OutputFormat) {
         );
         if !output.is_json() {
             println!();
-            println!("用法: bo -k <标的数量> <赔率1> <胜率1> ... <赔率N> <胜率N> [本金]");
-            println!("示例: bo -k 2 2.0 60 2.5 55 10000");
+            println!("用法1: bo -k <标的数量> <赔率1> <胜率1> ... <赔率N> <胜率N> [本金]");
+            println!("用法2: bo -k <descriptor1> <descriptor2> ... [本金]");
+            println!("示例: bo -k std:2.0:60 pm:60:75 stock:100:120:90:60 10000");
         }
         return;
     }
 
-    let mut bets = Vec::with_capacity(count);
+    let mut legs = Vec::with_capacity(count);
     for i in 0..count {
         let odds_field = format!("赔率{}", i + 1);
         let win_rate_field = format!("胜率{}", i + 1);
@@ -558,7 +701,6 @@ fn handle_portfolio(args: Vec<String>, output: OutputFormat) {
                 return;
             }
         };
-
         let win_rate = match parse_percent(p_args[3 + i * 2], &win_rate_field) {
             Ok(v) => v,
             Err(e) => {
@@ -567,23 +709,22 @@ fn handle_portfolio(args: Vec<String>, output: OutputFormat) {
             }
         };
 
-        bets.push(PortfolioBet { odds, win_rate });
+        legs.push(build_standard_leg(odds, win_rate));
     }
 
     let capital = if has_capital {
-        let cap: f64 = match p_args[p_args.len() - 1].parse() {
-            Ok(n) if n > 0.0 => n,
-            _ => {
-                emit_error(output, "本金必须为正数");
+        match parse_positive(p_args[p_args.len() - 1], "本金") {
+            Ok(v) => Some(v),
+            Err(e) => {
+                emit_error(output, &e);
                 return;
             }
-        };
-        Some(cap)
+        }
     } else {
         None
     };
 
-    cli_mode_portfolio(bets, capital, output);
+    execute_mode(ModeRequest::Portfolio { legs, capital }, output);
 }
 
 /// 检查是否为交互式模式调用

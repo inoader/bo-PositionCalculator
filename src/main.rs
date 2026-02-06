@@ -8,6 +8,7 @@ mod display;
 mod interactive;
 mod kelly;
 mod portfolio;
+mod portfolio_input;
 mod types;
 mod validation;
 

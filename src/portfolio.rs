@@ -1,10 +1,11 @@
 //! 组合凯利（独立二项标的）计算
 
-use crate::types::{PortfolioBet, PortfolioKellyResult};
+use crate::types::{PortfolioKellyResult, PortfolioLeg};
 
 const MAX_TOTAL_ALLOCATION: f64 = 0.999_999;
 const MAX_ITERATIONS: usize = 800;
 const IMPROVEMENT_EPS: f64 = 1e-12;
+const CONVERGENCE_OBJECTIVE_DELTA: f64 = 1e-10;
 
 #[derive(Debug, Clone)]
 struct OutcomeState {
@@ -12,20 +13,20 @@ struct OutcomeState {
     returns: Vec<f64>,
 }
 
-fn enumerate_states(bets: &[PortfolioBet]) -> Vec<OutcomeState> {
-    let n = bets.len();
+fn enumerate_states(legs: &[PortfolioLeg]) -> Vec<OutcomeState> {
+    let n = legs.len();
     let mut states = Vec::with_capacity(1 << n);
 
     for mask in 0..(1 << n) {
         let mut prob = 1.0;
         let mut returns = vec![0.0; n];
-        for (i, bet) in bets.iter().enumerate() {
+        for (i, leg) in legs.iter().enumerate() {
             if (mask & (1 << i)) != 0 {
-                prob *= bet.win_rate;
-                returns[i] = bet.odds - 1.0;
+                prob *= leg.win_prob;
+                returns[i] = leg.win_return;
             } else {
-                prob *= 1.0 - bet.win_rate;
-                returns[i] = -1.0;
+                prob *= 1.0 - leg.win_prob;
+                returns[i] = leg.loss_return;
             }
         }
         states.push(OutcomeState { prob, returns });
@@ -59,6 +60,14 @@ fn objective_and_gradient(allocations: &[f64], states: &[OutcomeState]) -> (f64,
     (objective, gradient)
 }
 
+fn state_wealth(allocations: &[f64], returns: &[f64]) -> f64 {
+    1.0 + allocations
+        .iter()
+        .zip(returns.iter())
+        .map(|(f, r)| f * r)
+        .sum::<f64>()
+}
+
 fn project_to_simplex(values: &[f64], cap: f64) -> Vec<f64> {
     let mut non_negative: Vec<f64> = values.iter().map(|v| v.max(0.0)).collect();
     let sum: f64 = non_negative.iter().sum();
@@ -87,23 +96,39 @@ fn project_to_simplex(values: &[f64], cap: f64) -> Vec<f64> {
     non_negative
 }
 
-fn initial_allocations(bets: &[PortfolioBet]) -> Vec<f64> {
-    let mut allocations: Vec<f64> = bets
-        .iter()
-        .map(|bet| {
-            let b = bet.odds - 1.0;
-            let q = 1.0 - bet.win_rate;
-            ((b * bet.win_rate - q) / b).max(0.0)
-        })
-        .collect();
+fn single_leg_kelly_fraction(leg: &PortfolioLeg) -> f64 {
+    let u = leg.win_return;
+    let d = leg.loss_return;
+    let p = leg.win_prob;
+    let q = 1.0 - p;
+
+    if !(u.is_finite() && d.is_finite() && p.is_finite()) {
+        return 0.0;
+    }
+    if (u - d).abs() < 1e-12 {
+        return if u > 0.0 { MAX_TOTAL_ALLOCATION } else { 0.0 };
+    }
+    if u.abs() < 1e-12 || d.abs() < 1e-12 {
+        return 0.0;
+    }
+
+    let numerator = -(p * u + q * d);
+    let denominator = u * d;
+    let f = numerator / denominator;
+
+    if !f.is_finite() || f <= 0.0 { 0.0 } else { f }
+}
+
+fn initial_allocations(legs: &[PortfolioLeg]) -> Vec<f64> {
+    let mut allocations: Vec<f64> = legs.iter().map(single_leg_kelly_fraction).collect();
     allocations = project_to_simplex(&allocations, MAX_TOTAL_ALLOCATION);
     allocations
 }
 
 /// 计算独立二项标的的组合凯利仓位
-pub fn calculate_portfolio_kelly(bets: &[PortfolioBet]) -> PortfolioKellyResult {
-    let states = enumerate_states(bets);
-    let mut allocations = initial_allocations(bets);
+pub fn calculate_portfolio_kelly(legs: &[PortfolioLeg]) -> PortfolioKellyResult {
+    let states = enumerate_states(legs);
+    let mut allocations = initial_allocations(legs);
     let mut step = 0.25;
     let mut iterations = 0usize;
     let mut converged = false;
@@ -117,6 +142,7 @@ pub fn calculate_portfolio_kelly(bets: &[PortfolioBet]) -> PortfolioKellyResult 
         }
 
         let mut improved = false;
+        let mut accepted_improvement = 0.0;
         let mut local_step = step;
 
         for _ in 0..24 {
@@ -129,6 +155,7 @@ pub fn calculate_portfolio_kelly(bets: &[PortfolioBet]) -> PortfolioKellyResult 
             let (next_objective, _) = objective_and_gradient(&projected, &states);
 
             if next_objective > objective + IMPROVEMENT_EPS {
+                accepted_improvement = next_objective - objective;
                 allocations = projected;
                 step = (local_step * 1.15).min(1.0);
                 improved = true;
@@ -145,22 +172,37 @@ pub fn calculate_portfolio_kelly(bets: &[PortfolioBet]) -> PortfolioKellyResult 
             converged = true;
             break;
         }
+        if accepted_improvement < CONVERGENCE_OBJECTIVE_DELTA {
+            converged = true;
+            break;
+        }
     }
 
     let (expected_log_growth, _) = objective_and_gradient(&allocations, &states);
     let total_allocation: f64 = allocations.iter().sum();
     let expected_arithmetic_return = allocations
         .iter()
-        .zip(bets.iter())
-        .map(|(f, bet)| f * (bet.win_rate * (bet.odds - 1.0) - (1.0 - bet.win_rate)))
+        .zip(legs.iter())
+        .map(|(f, leg)| {
+            f * (leg.win_prob * leg.win_return + (1.0 - leg.win_prob) * leg.loss_return)
+        })
         .sum();
+
+    let worst_case_multiplier = states
+        .iter()
+        .map(|s| state_wealth(&allocations, &s.returns))
+        .fold(f64::INFINITY, f64::min);
 
     PortfolioKellyResult {
         allocations,
         total_allocation,
         expected_log_growth,
         expected_arithmetic_return,
-        worst_case_multiplier: 1.0 - total_allocation,
+        worst_case_multiplier: if worst_case_multiplier.is_finite() {
+            worst_case_multiplier
+        } else {
+            0.0
+        },
         converged,
         iterations,
     }
@@ -169,16 +211,22 @@ pub fn calculate_portfolio_kelly(bets: &[PortfolioBet]) -> PortfolioKellyResult 
 #[cfg(test)]
 mod tests {
     use super::calculate_portfolio_kelly;
-    use crate::types::PortfolioBet;
+    use crate::types::PortfolioLeg;
 
-    fn bet(odds: f64, win_rate: f64) -> PortfolioBet {
-        PortfolioBet { odds, win_rate }
+    fn leg(odds: f64, win_rate: f64) -> PortfolioLeg {
+        PortfolioLeg {
+            source: "standard".to_string(),
+            summary: format!("odds={odds},win={win_rate}"),
+            win_prob: win_rate,
+            win_return: odds - 1.0,
+            loss_return: -1.0,
+        }
     }
 
     #[test]
     fn symmetric_bets_have_symmetric_allocations() {
-        let bets = vec![bet(2.0, 0.6), bet(2.0, 0.6)];
-        let result = calculate_portfolio_kelly(&bets);
+        let legs = vec![leg(2.0, 0.6), leg(2.0, 0.6)];
+        let result = calculate_portfolio_kelly(&legs);
         let diff = (result.allocations[0] - result.allocations[1]).abs();
         assert!(diff < 1e-6);
         assert!(result.allocations[0] > 0.0);
@@ -186,17 +234,59 @@ mod tests {
 
     #[test]
     fn negative_edge_bet_gets_near_zero_allocation() {
-        let bets = vec![bet(2.0, 0.6), bet(2.0, 0.4)];
-        let result = calculate_portfolio_kelly(&bets);
+        let legs = vec![leg(2.0, 0.6), leg(2.0, 0.4)];
+        let result = calculate_portfolio_kelly(&legs);
         assert!(result.allocations[0] > 0.0);
         assert!(result.allocations[1] < 1e-8);
     }
 
     #[test]
     fn total_allocation_respects_budget_constraint() {
-        let bets = vec![bet(2.0, 0.6), bet(2.5, 0.5), bet(3.0, 0.4)];
-        let result = calculate_portfolio_kelly(&bets);
+        let legs = vec![leg(2.0, 0.6), leg(2.5, 0.5), leg(3.0, 0.4)];
+        let result = calculate_portfolio_kelly(&legs);
         assert!(result.total_allocation < 1.0);
         assert!(result.worst_case_multiplier > 0.0);
+    }
+
+    #[test]
+    fn stock_like_leg_is_supported() {
+        let legs = vec![PortfolioLeg {
+            source: "stock".to_string(),
+            summary: "entry=100,target=120,stop=90,win=60%".to_string(),
+            win_prob: 0.6,
+            win_return: 0.2,
+            loss_return: -0.1,
+        }];
+        let result = calculate_portfolio_kelly(&legs);
+        assert!(result.total_allocation > 0.0);
+    }
+
+    #[test]
+    fn worst_case_multiplier_reflects_leg_loss_return() {
+        let legs = vec![PortfolioLeg {
+            source: "stock".to_string(),
+            summary: "entry=100,target=120,stop=90,win=60%".to_string(),
+            win_prob: 0.6,
+            win_return: 0.2,
+            loss_return: -0.1,
+        }];
+        let result = calculate_portfolio_kelly(&legs);
+        assert!(result.total_allocation > 0.95);
+        assert!(result.worst_case_multiplier > 0.85);
+        assert!(result.worst_case_multiplier <= 1.0);
+    }
+
+    #[test]
+    fn deterministic_positive_leg_has_worst_case_above_one() {
+        let legs = vec![PortfolioLeg {
+            source: "arbitrage".to_string(),
+            summary: "deterministic +5%".to_string(),
+            win_prob: 1.0,
+            win_return: 0.05,
+            loss_return: 0.05,
+        }];
+        let result = calculate_portfolio_kelly(&legs);
+        assert!(result.total_allocation > 0.95);
+        assert!(result.worst_case_multiplier > 1.04);
     }
 }
