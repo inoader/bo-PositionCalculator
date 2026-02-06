@@ -2,6 +2,7 @@
 //! f* = (bp - q) / b
 //! 其中 b 为赔率-1，p 为胜率，q = 1-p
 
+mod app;
 mod arbitrage;
 mod cli;
 mod display;

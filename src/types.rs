@@ -54,11 +54,33 @@ pub struct StockInfo {
     pub ratio: f64,
 }
 
+/// 组合腿来源类型
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PortfolioLegSource {
+    Standard,
+    Polymarket,
+    Stock,
+    Arbitrage2,
+    ArbitrageN,
+}
+
+impl PortfolioLegSource {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Standard => "standard",
+            Self::Polymarket => "polymarket",
+            Self::Stock => "stock",
+            Self::Arbitrage2 => "arbitrage2",
+            Self::ArbitrageN => "arbitrageN",
+        }
+    }
+}
+
 /// 组合凯利输入（单个标的/策略腿）
 #[derive(Debug, Clone)]
 pub struct PortfolioLeg {
-    /// 来源类型（standard/polymarket/stock/arbitrage/...）
-    pub source: String,
+    /// 来源类型
+    pub source: PortfolioLegSource,
     /// 参数摘要，便于展示
     pub summary: String,
     /// 胜率（0-1）
@@ -80,7 +102,7 @@ pub struct PortfolioKellyResult {
     pub expected_log_growth: f64,
     /// 期望线性收益率 E[(W'-W)/W]
     pub expected_arithmetic_return: f64,
-    /// 最差场景资金倍数（全部失败时）
+    /// 可达状态中的最差场景资金倍数
     pub worst_case_multiplier: f64,
     /// 优化是否收敛
     pub converged: bool,

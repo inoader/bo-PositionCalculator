@@ -2,14 +2,11 @@
 
 use std::io::{self, Write};
 
-use crate::arbitrage::{calculate_arbitrage, calculate_multi_arbitrage};
+use crate::app::{ModeRequest, OutputFormat, execute_mode};
 use crate::display::{
-    print_result, print_result_arbitrage, print_result_multi_arbitrage, print_result_polymarket,
-    print_result_portfolio, print_result_stock, print_title, print_title_arbitrage,
-    print_title_polymarket, print_title_portfolio, print_title_stock, separator,
+    print_title, print_title_arbitrage, print_title_polymarket, print_title_portfolio,
+    print_title_stock, separator,
 };
-use crate::kelly::{build_stock_info, kelly_criterion, kelly_polymarket, kelly_stock};
-use crate::portfolio::calculate_portfolio_kelly;
 use crate::portfolio_input::parse_portfolio_leg_descriptor;
 use crate::validation::{parse_market_price, parse_odds, parse_percent, parse_positive};
 
@@ -72,8 +69,14 @@ pub fn interactive() {
             }
         };
 
-        let result = kelly_criterion(odds, win_rate);
-        print_result(odds, win_rate, &result, capital);
+        execute_mode(
+            ModeRequest::Standard {
+                odds,
+                win_rate,
+                capital,
+            },
+            OutputFormat::Text,
+        );
         println!();
     }
 }
@@ -137,8 +140,14 @@ pub fn interactive_polymarket() {
             }
         };
 
-        let result = kelly_polymarket(market_price, your_probability);
-        print_result_polymarket(market_price, your_probability, &result, capital);
+        execute_mode(
+            ModeRequest::Polymarket {
+                market_price,
+                your_probability,
+                capital,
+            },
+            OutputFormat::Text,
+        );
         println!();
     }
 }
@@ -240,9 +249,16 @@ pub fn interactive_stock() {
             }
         };
 
-        let info = build_stock_info(entry_price, target_price, stop_loss);
-        let result = kelly_stock(entry_price, target_price, stop_loss, win_rate);
-        print_result_stock(&info, win_rate, &result, capital);
+        execute_mode(
+            ModeRequest::Stock {
+                entry_price,
+                target_price,
+                stop_loss,
+                win_rate,
+                capital,
+            },
+            OutputFormat::Text,
+        );
         println!();
     }
 }
@@ -306,8 +322,14 @@ pub fn interactive_arbitrage() {
             }
         };
 
-        let result = calculate_arbitrage(odds1, odds2);
-        print_result_arbitrage(odds1, odds2, &result, capital);
+        execute_mode(
+            ModeRequest::Arbitrage {
+                odds1,
+                odds2,
+                capital,
+            },
+            OutputFormat::Text,
+        );
         println!();
     }
 }
@@ -385,8 +407,10 @@ pub fn interactive_multi_arbitrage() {
             }
         };
 
-        let result = calculate_multi_arbitrage(&odds);
-        print_result_multi_arbitrage(&odds, &result, capital);
+        execute_mode(
+            ModeRequest::MultiArbitrage { odds, capital },
+            OutputFormat::Text,
+        );
         println!();
     }
 }
@@ -464,8 +488,13 @@ pub fn interactive_portfolio() {
             }
         };
 
-        let result = calculate_portfolio_kelly(&bets);
-        print_result_portfolio(&bets, &result, capital);
+        execute_mode(
+            ModeRequest::Portfolio {
+                legs: bets,
+                capital,
+            },
+            OutputFormat::Text,
+        );
         println!();
     }
 }

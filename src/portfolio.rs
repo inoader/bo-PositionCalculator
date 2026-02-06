@@ -6,6 +6,7 @@ const MAX_TOTAL_ALLOCATION: f64 = 0.999_999;
 const MAX_ITERATIONS: usize = 800;
 const IMPROVEMENT_EPS: f64 = 1e-12;
 const CONVERGENCE_OBJECTIVE_DELTA: f64 = 1e-10;
+const STATE_PROB_EPS: f64 = 1e-15;
 
 #[derive(Debug, Clone)]
 struct OutcomeState {
@@ -190,6 +191,7 @@ pub fn calculate_portfolio_kelly(legs: &[PortfolioLeg]) -> PortfolioKellyResult 
 
     let worst_case_multiplier = states
         .iter()
+        .filter(|s| s.prob > STATE_PROB_EPS)
         .map(|s| state_wealth(&allocations, &s.returns))
         .fold(f64::INFINITY, f64::min);
 
@@ -211,11 +213,11 @@ pub fn calculate_portfolio_kelly(legs: &[PortfolioLeg]) -> PortfolioKellyResult 
 #[cfg(test)]
 mod tests {
     use super::calculate_portfolio_kelly;
-    use crate::types::PortfolioLeg;
+    use crate::types::{PortfolioLeg, PortfolioLegSource};
 
     fn leg(odds: f64, win_rate: f64) -> PortfolioLeg {
         PortfolioLeg {
-            source: "standard".to_string(),
+            source: PortfolioLegSource::Standard,
             summary: format!("odds={odds},win={win_rate}"),
             win_prob: win_rate,
             win_return: odds - 1.0,
@@ -251,7 +253,7 @@ mod tests {
     #[test]
     fn stock_like_leg_is_supported() {
         let legs = vec![PortfolioLeg {
-            source: "stock".to_string(),
+            source: PortfolioLegSource::Stock,
             summary: "entry=100,target=120,stop=90,win=60%".to_string(),
             win_prob: 0.6,
             win_return: 0.2,
@@ -264,7 +266,7 @@ mod tests {
     #[test]
     fn worst_case_multiplier_reflects_leg_loss_return() {
         let legs = vec![PortfolioLeg {
-            source: "stock".to_string(),
+            source: PortfolioLegSource::Stock,
             summary: "entry=100,target=120,stop=90,win=60%".to_string(),
             win_prob: 0.6,
             win_return: 0.2,
@@ -279,7 +281,7 @@ mod tests {
     #[test]
     fn deterministic_positive_leg_has_worst_case_above_one() {
         let legs = vec![PortfolioLeg {
-            source: "arbitrage".to_string(),
+            source: PortfolioLegSource::Arbitrage2,
             summary: "deterministic +5%".to_string(),
             win_prob: 1.0,
             win_return: 0.05,
@@ -288,5 +290,12 @@ mod tests {
         let result = calculate_portfolio_kelly(&legs);
         assert!(result.total_allocation > 0.95);
         assert!(result.worst_case_multiplier > 1.04);
+    }
+
+    #[test]
+    fn worst_case_ignores_zero_probability_states() {
+        let legs = vec![leg(2.0, 1.0), leg(2.0, 1.0)];
+        let result = calculate_portfolio_kelly(&legs);
+        assert!(result.worst_case_multiplier > 1.9);
     }
 }

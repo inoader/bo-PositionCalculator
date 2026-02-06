@@ -1,7 +1,7 @@
 //! 组合凯利输入转换（各模式 -> 统一组合腿）
 
 use crate::arbitrage::{calculate_arbitrage, calculate_multi_arbitrage};
-use crate::types::PortfolioLeg;
+use crate::types::{PortfolioLeg, PortfolioLegSource};
 use crate::validation::{parse_market_price, parse_odds, parse_percent, parse_positive};
 
 fn pct(v: f64) -> String {
@@ -10,7 +10,7 @@ fn pct(v: f64) -> String {
 
 pub fn build_standard_leg(odds: f64, win_rate: f64) -> PortfolioLeg {
     PortfolioLeg {
-        source: "standard".to_string(),
+        source: PortfolioLegSource::Standard,
         summary: format!("赔率 {:.3} / 胜率 {}", odds, pct(win_rate)),
         win_prob: win_rate,
         win_return: odds - 1.0,
@@ -21,7 +21,7 @@ pub fn build_standard_leg(odds: f64, win_rate: f64) -> PortfolioLeg {
 pub fn build_polymarket_leg(market_price: f64, your_probability: f64) -> PortfolioLeg {
     let odds = 1.0 / market_price;
     PortfolioLeg {
-        source: "polymarket".to_string(),
+        source: PortfolioLegSource::Polymarket,
         summary: format!(
             "价格 {:.3}% / 概率 {}",
             market_price * 100.0,
@@ -47,7 +47,7 @@ pub fn build_stock_leg(
     let loss_return = -(entry_price - stop_loss) / entry_price;
 
     Ok(PortfolioLeg {
-        source: "stock".to_string(),
+        source: PortfolioLegSource::Stock,
         summary: format!(
             "入场 {:.2} / 止盈 {:.2} / 止损 {:.2} / 胜率 {}",
             entry_price,
@@ -70,7 +70,7 @@ pub fn build_arbitrage_two_leg(odds1: f64, odds2: f64) -> PortfolioLeg {
     };
 
     PortfolioLeg {
-        source: "arbitrage2".to_string(),
+        source: PortfolioLegSource::Arbitrage2,
         summary: format!(
             "双边赔率 {:.3}/{:.3} / {}",
             odds1,
@@ -96,7 +96,7 @@ pub fn build_arbitrage_multi_leg(odds: &[f64]) -> PortfolioLeg {
     };
 
     PortfolioLeg {
-        source: "arbitrageN".to_string(),
+        source: PortfolioLegSource::ArbitrageN,
         summary: format!(
             "多边赔率 {} / {}",
             odds.iter()

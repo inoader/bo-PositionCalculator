@@ -469,7 +469,7 @@ pub fn print_result_portfolio(
         println!(
             "    ├─ 标的{} [{}]: {} / EV {:.2}%",
             i + 1,
-            leg.source,
+            leg.source.as_str(),
             leg.summary,
             edge * 100.0
         );
@@ -725,7 +725,7 @@ pub fn print_result_portfolio_json(
         .map(|leg| {
             format!(
                 r#"{{"source":"{}","summary":"{}","win_prob":{},"win_return":{},"loss_return":{}}}"#,
-                json_escape(&leg.source),
+                json_escape(leg.source.as_str()),
                 json_escape(&leg.summary),
                 json_number(leg.win_prob),
                 json_number(leg.win_return),
