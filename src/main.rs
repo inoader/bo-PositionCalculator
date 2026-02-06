@@ -8,6 +8,7 @@ mod display;
 mod interactive;
 mod kelly;
 mod types;
+mod validation;
 
 use std::env;
 

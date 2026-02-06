@@ -72,3 +72,54 @@ pub fn build_stock_info(entry_price: f64, target_price: f64, stop_loss: f64) -> 
         ratio,
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::{build_stock_info, kelly_criterion, kelly_polymarket, kelly_stock};
+
+    const EPS: f64 = 1e-10;
+
+    fn assert_almost_eq(actual: f64, expected: f64) {
+        assert!((actual - expected).abs() < EPS, "actual={actual}, expected={expected}");
+    }
+
+    #[test]
+    fn standard_kelly_calculation_is_correct() {
+        let result = kelly_criterion(2.0, 0.6);
+        assert_almost_eq(result.optimal_fraction, 0.2);
+        assert_almost_eq(result.expected_value, 0.2);
+        assert!(result.positive_ev);
+    }
+
+    #[test]
+    fn polymarket_kelly_calculation_is_correct() {
+        let result = kelly_polymarket(0.6, 0.75);
+        assert_almost_eq(result.optimal_fraction, 0.375);
+        assert_almost_eq(result.expected_value, 0.25);
+        assert!(result.positive_ev);
+    }
+
+    #[test]
+    fn stock_kelly_calculation_is_correct() {
+        let result = kelly_stock(100.0, 120.0, 90.0, 0.6);
+        assert_almost_eq(result.optimal_fraction, 0.4);
+        assert_almost_eq(result.expected_value, 0.8);
+        assert!(result.positive_ev);
+    }
+
+    #[test]
+    fn stock_info_ratio_is_correct() {
+        let info = build_stock_info(100.0, 120.0, 90.0);
+        assert_almost_eq(info.profit, 20.0);
+        assert_almost_eq(info.risk, 10.0);
+        assert_almost_eq(info.ratio, 2.0);
+    }
+
+    #[test]
+    fn negative_ev_sets_non_positive_flag() {
+        let result = kelly_criterion(2.0, 0.4);
+        assert!(result.expected_value < 0.0);
+        assert!(!result.positive_ev);
+        assert!(result.optimal_fraction <= 0.0);
+    }
+}

@@ -8,6 +8,7 @@ use crate::display::{
     print_title, print_title_arbitrage, print_title_polymarket, print_title_stock, separator,
 };
 use crate::kelly::{build_stock_info, kelly_criterion, kelly_polymarket, kelly_stock};
+use crate::validation::{parse_market_price, parse_odds, parse_percent, parse_positive};
 
 /// 标准交互式模式
 pub fn interactive() {
@@ -26,14 +27,10 @@ pub fn interactive() {
             break;
         }
 
-        let odds: f64 = match odds_input.trim().parse() {
-            Ok(n) if n > 1.0 => n,
-            Ok(_) => {
-                println!("✗ 赔率必须大于 1.0\n");
-                continue;
-            }
-            Err(_) => {
-                println!("✗ 无效输入\n");
+        let odds: f64 = match parse_odds(odds_input.trim(), "赔率") {
+            Ok(n) => n,
+            Err(e) => {
+                println!("✗ {}\n", e);
                 continue;
             }
         };
@@ -45,19 +42,13 @@ pub fn interactive() {
         let mut win_rate_input = String::new();
         io::stdin().read_line(&mut win_rate_input).unwrap();
 
-        let win_rate_percent: f64 = match win_rate_input.trim().parse() {
-            Ok(n) if n >= 0.0 && n <= 100.0 => n,
-            Ok(_) => {
-                println!("✗ 胜率必须在 0-100 之间\n");
-                continue;
-            }
-            Err(_) => {
-                println!("✗ 无效输入\n");
+        let win_rate = match parse_percent(win_rate_input.trim(), "胜率") {
+            Ok(n) => n,
+            Err(e) => {
+                println!("✗ {}\n", e);
                 continue;
             }
         };
-
-        let win_rate = win_rate_percent / 100.0;
 
         println!("请输入本金 (可选，直接回车跳过):");
         print!("> ");
@@ -69,9 +60,9 @@ pub fn interactive() {
         let capital: Option<f64> = if capital_input.trim().is_empty() {
             None
         } else {
-            match capital_input.trim().parse() {
-                Ok(n) if n > 0.0 => Some(n),
-                _ => {
+            match parse_positive(capital_input.trim(), "本金") {
+                Ok(n) => Some(n),
+                Err(_) => {
                     println!("✗ 本金必须为正数，已跳过\n");
                     None
                 }
@@ -101,14 +92,10 @@ pub fn interactive_polymarket() {
             break;
         }
 
-        let market_price: f64 = match price_input.trim().parse::<f64>() {
-            Ok(n) if n > 0.0 && n <= 100.0 => n / 100.0,
-            Ok(_) => {
-                println!("✗ 价格必须在 0-100 之间\n");
-                continue;
-            }
-            Err(_) => {
-                println!("✗ 无效输入\n");
+        let market_price: f64 = match parse_market_price(price_input.trim()) {
+            Ok(n) => n,
+            Err(e) => {
+                println!("✗ {}\n", e);
                 continue;
             }
         };
@@ -120,14 +107,10 @@ pub fn interactive_polymarket() {
         let mut prob_input = String::new();
         io::stdin().read_line(&mut prob_input).unwrap();
 
-        let your_probability: f64 = match prob_input.trim().parse::<f64>() {
-            Ok(n) if n >= 0.0 && n <= 100.0 => n / 100.0,
-            Ok(_) => {
-                println!("✗ 概率必须在 0-100 之间\n");
-                continue;
-            }
-            Err(_) => {
-                println!("✗ 无效输入\n");
+        let your_probability: f64 = match parse_percent(prob_input.trim(), "概率") {
+            Ok(n) => n,
+            Err(e) => {
+                println!("✗ {}\n", e);
                 continue;
             }
         };
@@ -142,9 +125,9 @@ pub fn interactive_polymarket() {
         let capital: Option<f64> = if capital_input.trim().is_empty() {
             None
         } else {
-            match capital_input.trim().parse() {
-                Ok(n) if n > 0.0 => Some(n),
-                _ => {
+            match parse_positive(capital_input.trim(), "本金") {
+                Ok(n) => Some(n),
+                Err(_) => {
                     println!("✗ 本金必须为正数，已跳过\n");
                     None
                 }
@@ -174,10 +157,10 @@ pub fn interactive_stock() {
             break;
         }
 
-        let entry_price: f64 = match entry_input.trim().parse() {
-            Ok(n) if n > 0.0 => n,
-            _ => {
-                println!("✗ 输入必须是正数\n");
+        let entry_price: f64 = match parse_positive(entry_input.trim(), "当前价") {
+            Ok(n) => n,
+            Err(e) => {
+                println!("✗ {}\n", e);
                 continue;
             }
         };
@@ -189,10 +172,14 @@ pub fn interactive_stock() {
         let mut target_input = String::new();
         io::stdin().read_line(&mut target_input).unwrap();
 
-        let target_price: f64 = match target_input.trim().parse() {
+        let target_price: f64 = match parse_positive(target_input.trim(), "止盈价") {
             Ok(n) if n > entry_price => n,
-            _ => {
+            Ok(_) => {
                 println!("✗ 止盈价必须大于当前价\n");
+                continue;
+            }
+            Err(e) => {
+                println!("✗ {}\n", e);
                 continue;
             }
         };
@@ -204,10 +191,14 @@ pub fn interactive_stock() {
         let mut stop_input = String::new();
         io::stdin().read_line(&mut stop_input).unwrap();
 
-        let stop_loss: f64 = match stop_input.trim().parse() {
+        let stop_loss: f64 = match parse_positive(stop_input.trim(), "止损价") {
             Ok(n) if n < entry_price => n,
-            _ => {
+            Ok(_) => {
                 println!("✗ 止损价必须小于当前价\n");
+                continue;
+            }
+            Err(e) => {
+                println!("✗ {}\n", e);
                 continue;
             }
         };
@@ -219,15 +210,13 @@ pub fn interactive_stock() {
         let mut win_rate_input = String::new();
         io::stdin().read_line(&mut win_rate_input).unwrap();
 
-        let win_rate_percent: f64 = match win_rate_input.trim().parse() {
-            Ok(n) if n >= 0.0 && n <= 100.0 => n,
-            _ => {
-                println!("✗ 胜率必须在 0-100 之间\n");
+        let win_rate = match parse_percent(win_rate_input.trim(), "胜率") {
+            Ok(n) => n,
+            Err(e) => {
+                println!("✗ {}\n", e);
                 continue;
             }
         };
-
-        let win_rate = win_rate_percent / 100.0;
 
         println!("请输入本金 (可选，直接回车跳过):");
         print!("> ");
@@ -239,9 +228,9 @@ pub fn interactive_stock() {
         let capital: Option<f64> = if capital_input.trim().is_empty() {
             None
         } else {
-            match capital_input.trim().parse() {
-                Ok(n) if n > 0.0 => Some(n),
-                _ => {
+            match parse_positive(capital_input.trim(), "本金") {
+                Ok(n) => Some(n),
+                Err(_) => {
                     println!("✗ 本金必须为正数，已跳过\n");
                     None
                 }
@@ -272,10 +261,10 @@ pub fn interactive_arbitrage() {
             break;
         }
 
-        let odds1: f64 = match odds1_input.trim().parse() {
-            Ok(n) if n > 1.0 => n,
-            _ => {
-                println!("✗ 赔率必须大于 1.0\n");
+        let odds1: f64 = match parse_odds(odds1_input.trim(), "赔率1") {
+            Ok(n) => n,
+            Err(e) => {
+                println!("✗ {}\n", e);
                 continue;
             }
         };
@@ -287,10 +276,10 @@ pub fn interactive_arbitrage() {
         let mut odds2_input = String::new();
         io::stdin().read_line(&mut odds2_input).unwrap();
 
-        let odds2: f64 = match odds2_input.trim().parse() {
-            Ok(n) if n > 1.0 => n,
-            _ => {
-                println!("✗ 赔率必须大于 1.0\n");
+        let odds2: f64 = match parse_odds(odds2_input.trim(), "赔率2") {
+            Ok(n) => n,
+            Err(e) => {
+                println!("✗ {}\n", e);
                 continue;
             }
         };
@@ -305,9 +294,9 @@ pub fn interactive_arbitrage() {
         let capital: Option<f64> = if capital_input.trim().is_empty() {
             None
         } else {
-            match capital_input.trim().parse() {
-                Ok(n) if n > 0.0 => Some(n),
-                _ => {
+            match parse_positive(capital_input.trim(), "本金") {
+                Ok(n) => Some(n),
+                Err(_) => {
                     println!("✗ 本金必须为正数，已跳过\n");
                     None
                 }
@@ -362,10 +351,10 @@ pub fn interactive_multi_arbitrage() {
                 let mut odds_input = String::new();
                 io::stdin().read_line(&mut odds_input).unwrap();
 
-                let o: f64 = match odds_input.trim().parse() {
-                    Ok(n) if n > 1.0 => n,
-                    _ => {
-                        println!("✗ 赔率必须大于 1.0\n");
+                let o: f64 = match parse_odds(odds_input.trim(), "赔率") {
+                    Ok(n) => n,
+                    Err(e) => {
+                        println!("✗ {}\n", e);
                         continue 'outer;
                     }
                 };
@@ -384,9 +373,9 @@ pub fn interactive_multi_arbitrage() {
         let capital: Option<f64> = if capital_input.trim().is_empty() {
             None
         } else {
-            match capital_input.trim().parse() {
-                Ok(n) if n > 0.0 => Some(n),
-                _ => {
+            match parse_positive(capital_input.trim(), "本金") {
+                Ok(n) => Some(n),
+                Err(_) => {
                     println!("✗ 本金必须为正数，已跳过\n");
                     None
                 }
