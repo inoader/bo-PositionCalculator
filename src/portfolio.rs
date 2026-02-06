@@ -1,6 +1,6 @@
-//! 组合凯利（独立二项标的）计算
+//! 组合凯利（独立二项标的 / 相关情景）计算
 
-use crate::types::{PortfolioKellyResult, PortfolioLeg};
+use crate::types::{PortfolioKellyResult, PortfolioLeg, PortfolioScenario};
 
 const MAX_TOTAL_ALLOCATION: f64 = 0.999_999;
 const MAX_ITERATIONS: usize = 800;
@@ -14,7 +14,7 @@ struct OutcomeState {
     returns: Vec<f64>,
 }
 
-fn enumerate_states(legs: &[PortfolioLeg]) -> Vec<OutcomeState> {
+fn enumerate_independent_states(legs: &[PortfolioLeg]) -> Vec<OutcomeState> {
     let n = legs.len();
     let mut states = Vec::with_capacity(1 << n);
 
@@ -34,6 +34,31 @@ fn enumerate_states(legs: &[PortfolioLeg]) -> Vec<OutcomeState> {
     }
 
     states
+}
+
+fn states_from_scenarios(leg_count: usize, scenarios: &[PortfolioScenario]) -> Vec<OutcomeState> {
+    scenarios
+        .iter()
+        .map(|scenario| {
+            assert!(
+                scenario.probability.is_finite() && scenario.probability >= 0.0,
+                "scenario probability must be finite and non-negative"
+            );
+            assert!(
+                scenario.returns.len() == leg_count,
+                "scenario returns length mismatch"
+            );
+            assert!(
+                scenario.returns.iter().all(|r| r.is_finite()),
+                "scenario return must be finite"
+            );
+
+            OutcomeState {
+                prob: scenario.probability,
+                returns: scenario.returns.clone(),
+            }
+        })
+        .collect()
 }
 
 fn objective_and_gradient(allocations: &[f64], states: &[OutcomeState]) -> (f64, Vec<f64>) {
@@ -67,6 +92,20 @@ fn state_wealth(allocations: &[f64], returns: &[f64]) -> f64 {
         .zip(returns.iter())
         .map(|(f, r)| f * r)
         .sum::<f64>()
+}
+
+fn expected_arithmetic_return(allocations: &[f64], states: &[OutcomeState]) -> f64 {
+    states
+        .iter()
+        .map(|s| {
+            s.prob
+                * allocations
+                    .iter()
+                    .zip(&s.returns)
+                    .map(|(f, r)| f * r)
+                    .sum::<f64>()
+        })
+        .sum()
 }
 
 fn project_to_simplex(values: &[f64], cap: f64) -> Vec<f64> {
@@ -120,23 +159,47 @@ fn single_leg_kelly_fraction(leg: &PortfolioLeg) -> f64 {
     if !f.is_finite() || f <= 0.0 { 0.0 } else { f }
 }
 
-fn initial_allocations(legs: &[PortfolioLeg]) -> Vec<f64> {
-    let mut allocations: Vec<f64> = legs.iter().map(single_leg_kelly_fraction).collect();
-    allocations = project_to_simplex(&allocations, MAX_TOTAL_ALLOCATION);
-    allocations
+fn initial_allocations_independent(legs: &[PortfolioLeg]) -> Vec<f64> {
+    let allocations: Vec<f64> = legs.iter().map(single_leg_kelly_fraction).collect();
+    project_to_simplex(&allocations, MAX_TOTAL_ALLOCATION)
 }
 
-/// 计算独立二项标的的组合凯利仓位
-pub fn calculate_portfolio_kelly(legs: &[PortfolioLeg]) -> PortfolioKellyResult {
-    let states = enumerate_states(legs);
-    let mut allocations = initial_allocations(legs);
+fn initial_allocations_correlated(leg_count: usize, states: &[OutcomeState]) -> Vec<f64> {
+    let mut edges = vec![0.0; leg_count];
+    for state in states {
+        for (i, ret) in state.returns.iter().enumerate() {
+            edges[i] += state.prob * ret;
+        }
+    }
+
+    let non_negative: Vec<f64> = edges.into_iter().map(|e| e.max(0.0)).collect();
+    project_to_simplex(&non_negative, MAX_TOTAL_ALLOCATION)
+}
+
+fn solve_with_states(
+    leg_count: usize,
+    states: &[OutcomeState],
+    mut allocations: Vec<f64>,
+) -> PortfolioKellyResult {
+    if leg_count == 0 || states.is_empty() {
+        return PortfolioKellyResult {
+            allocations: vec![0.0; leg_count],
+            total_allocation: 0.0,
+            expected_log_growth: 0.0,
+            expected_arithmetic_return: 0.0,
+            worst_case_multiplier: 1.0,
+            converged: true,
+            iterations: 0,
+        };
+    }
+
     let mut step = 0.25;
     let mut iterations = 0usize;
     let mut converged = false;
 
     for _ in 0..MAX_ITERATIONS {
         iterations += 1;
-        let (objective, gradient) = objective_and_gradient(&allocations, &states);
+        let (objective, gradient) = objective_and_gradient(&allocations, states);
 
         if !objective.is_finite() {
             break;
@@ -153,7 +216,7 @@ pub fn calculate_portfolio_kelly(legs: &[PortfolioLeg]) -> PortfolioKellyResult 
                 .map(|(f, g)| f + local_step * g)
                 .collect();
             let projected = project_to_simplex(&candidate, MAX_TOTAL_ALLOCATION);
-            let (next_objective, _) = objective_and_gradient(&projected, &states);
+            let (next_objective, _) = objective_and_gradient(&projected, states);
 
             if next_objective > objective + IMPROVEMENT_EPS {
                 accepted_improvement = next_objective - objective;
@@ -169,25 +232,15 @@ pub fn calculate_portfolio_kelly(legs: &[PortfolioLeg]) -> PortfolioKellyResult 
             }
         }
 
-        if !improved {
-            converged = true;
-            break;
-        }
-        if accepted_improvement < CONVERGENCE_OBJECTIVE_DELTA {
+        if !improved || accepted_improvement < CONVERGENCE_OBJECTIVE_DELTA {
             converged = true;
             break;
         }
     }
 
-    let (expected_log_growth, _) = objective_and_gradient(&allocations, &states);
+    let (expected_log_growth, _) = objective_and_gradient(&allocations, states);
     let total_allocation: f64 = allocations.iter().sum();
-    let expected_arithmetic_return = allocations
-        .iter()
-        .zip(legs.iter())
-        .map(|(f, leg)| {
-            f * (leg.win_prob * leg.win_return + (1.0 - leg.win_prob) * leg.loss_return)
-        })
-        .sum();
+    let expected_arithmetic_return = expected_arithmetic_return(&allocations, states);
 
     let worst_case_multiplier = states
         .iter()
@@ -210,10 +263,27 @@ pub fn calculate_portfolio_kelly(legs: &[PortfolioLeg]) -> PortfolioKellyResult 
     }
 }
 
+/// 计算独立二项标的的组合凯利仓位
+pub fn calculate_portfolio_kelly(legs: &[PortfolioLeg]) -> PortfolioKellyResult {
+    let states = enumerate_independent_states(legs);
+    let allocations = initial_allocations_independent(legs);
+    solve_with_states(legs.len(), &states, allocations)
+}
+
+/// 计算相关情景输入下的组合凯利仓位
+pub fn calculate_portfolio_kelly_correlated(
+    leg_count: usize,
+    scenarios: &[PortfolioScenario],
+) -> PortfolioKellyResult {
+    let states = states_from_scenarios(leg_count, scenarios);
+    let allocations = initial_allocations_correlated(leg_count, &states);
+    solve_with_states(leg_count, &states, allocations)
+}
+
 #[cfg(test)]
 mod tests {
-    use super::calculate_portfolio_kelly;
-    use crate::types::{PortfolioLeg, PortfolioLegSource};
+    use super::{calculate_portfolio_kelly, calculate_portfolio_kelly_correlated};
+    use crate::types::{PortfolioLeg, PortfolioLegSource, PortfolioScenario};
 
     fn leg(odds: f64, win_rate: f64) -> PortfolioLeg {
         PortfolioLeg {
@@ -297,5 +367,58 @@ mod tests {
         let legs = vec![leg(2.0, 1.0), leg(2.0, 1.0)];
         let result = calculate_portfolio_kelly(&legs);
         assert!(result.worst_case_multiplier > 1.9);
+    }
+
+    #[test]
+    fn correlated_joint_drawdown_reduces_total_allocation() {
+        let scenarios = vec![
+            PortfolioScenario {
+                probability: 0.5,
+                returns: vec![0.2, 0.2],
+            },
+            PortfolioScenario {
+                probability: 0.5,
+                returns: vec![-0.9, -0.9],
+            },
+        ];
+        let result = calculate_portfolio_kelly_correlated(2, &scenarios);
+        assert!(result.total_allocation < 0.5);
+        assert!(result.allocations[0] >= 0.0);
+        assert!(result.allocations[1] >= 0.0);
+    }
+
+    #[test]
+    fn correlated_anti_correlation_allocates_to_both_legs() {
+        let scenarios = vec![
+            PortfolioScenario {
+                probability: 0.5,
+                returns: vec![0.2, -0.1],
+            },
+            PortfolioScenario {
+                probability: 0.5,
+                returns: vec![-0.1, 0.2],
+            },
+        ];
+        let result = calculate_portfolio_kelly_correlated(2, &scenarios);
+        assert!(result.allocations[0] > 0.2);
+        assert!(result.allocations[1] > 0.2);
+        let diff = (result.allocations[0] - result.allocations[1]).abs();
+        assert!(diff < 1e-6);
+    }
+
+    #[test]
+    fn correlated_zero_probability_scenario_is_ignored() {
+        let scenarios = vec![
+            PortfolioScenario {
+                probability: 1.0,
+                returns: vec![0.2],
+            },
+            PortfolioScenario {
+                probability: 0.0,
+                returns: vec![-0.9],
+            },
+        ];
+        let result = calculate_portfolio_kelly_correlated(1, &scenarios);
+        assert!(result.total_allocation > 0.95);
     }
 }

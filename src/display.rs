@@ -2,7 +2,7 @@
 
 use crate::types::{
     ArbitrageResult, KellyResult, MultiArbitrageResult, NashResult, PortfolioKellyResult,
-    PortfolioLeg, StockInfo,
+    PortfolioLeg, PortfolioScenario, StockInfo,
 };
 
 // EV 以百分比显示到小数点后两位，这里使用对应阈值避免出现“显示 0.00% 但判定正/负期望”。
@@ -94,6 +94,14 @@ fn json_matrix_2x2(matrix: [[f64; 2]; 2]) -> String {
         json_number(matrix[1][0]),
         json_number(matrix[1][1])
     )
+}
+
+fn format_returns_pct(values: &[f64]) -> String {
+    values
+        .iter()
+        .map(|v| format!("{:.2}%", v * 100.0))
+        .collect::<Vec<String>>()
+        .join(", ")
 }
 
 pub fn print_json_error(message: &str) {
@@ -551,6 +559,92 @@ pub fn print_result_portfolio(
     separator();
 }
 
+/// 打印相关情景组合凯利结果
+pub fn print_result_portfolio_correlated(
+    leg_count: usize,
+    scenarios: &[PortfolioScenario],
+    result: &PortfolioKellyResult,
+    capital: Option<f64>,
+) {
+    println!();
+    separator();
+    println!("                组合凯利计算结果（相关情景）");
+    separator();
+    println!();
+    println!(
+        "  输入参数: {} 个标的 / {} 个情景",
+        leg_count,
+        scenarios.len()
+    );
+    let prob_sum: f64 = scenarios.iter().map(|s| s.probability).sum();
+    println!("    ├─ 概率和: {:.4}%", prob_sum * 100.0);
+    println!("    └─ 情景列表:");
+    for (i, scenario) in scenarios.iter().enumerate() {
+        println!(
+            "       ├─ 情景{}: 概率 {:.2}% / 收益 [{}]",
+            i + 1,
+            scenario.probability * 100.0,
+            format_returns_pct(&scenario.returns)
+        );
+    }
+    println!();
+    println!("  组合分析:");
+    println!("    ├─ 总仓位: {}", format_pct(result.total_allocation));
+    println!(
+        "    ├─ 最差场景资金倍数: {:.4}",
+        result.worst_case_multiplier
+    );
+    println!(
+        "    ├─ 期望线性收益: {:.2}%",
+        result.expected_arithmetic_return * 100.0
+    );
+    println!(
+        "    ├─ 期望对数增长: {:.4}%",
+        result.expected_log_growth * 100.0
+    );
+    println!(
+        "    └─ 收敛状态: {} (迭代 {} 次)",
+        if result.converged {
+            "已收敛"
+        } else {
+            "达到迭代上限"
+        },
+        result.iterations
+    );
+    println!();
+    println!("  仓位分配:");
+    for (i, alloc) in result.allocations.iter().enumerate() {
+        println!("    ├─ 标的{}: {}", i + 1, format_pct(*alloc));
+    }
+    println!();
+
+    if let Some(cap) = capital {
+        println!("  基于本金 {:.2} 的分配金额:", cap);
+        let full_used: f64 = result.allocations.iter().map(|a| cap * a).sum();
+        for (i, alloc) in result.allocations.iter().enumerate() {
+            println!(
+                "    ├─ 标的{}: 全凯利 {:.2} / 半凯利 {:.2} / 1/4凯利 {:.2}",
+                i + 1,
+                cap * alloc,
+                cap * alloc * 0.5,
+                cap * alloc * 0.25
+            );
+        }
+        println!(
+            "    ├─ 全凯利剩余现金: {:.2}",
+            cap * (1.0 - result.total_allocation).max(0.0)
+        );
+        println!(
+            "    └─ 全凯利总投入: {:.2} (占比 {})",
+            full_used,
+            format_pct(result.total_allocation)
+        );
+        println!();
+    }
+
+    separator();
+}
+
 /// 打印纳什均衡结果
 pub fn print_result_nash(
     row_payoffs: [[f64; 2]; 2],
@@ -890,6 +984,58 @@ pub fn print_result_portfolio_json(
     );
 }
 
+/// 打印相关情景组合凯利 JSON 结果
+pub fn print_result_portfolio_correlated_json(
+    leg_count: usize,
+    scenarios: &[PortfolioScenario],
+    result: &PortfolioKellyResult,
+    capital: Option<f64>,
+) {
+    let scenarios_json = scenarios
+        .iter()
+        .map(|s| {
+            format!(
+                r#"{{"probability":{},"returns":{}}}"#,
+                json_number(s.probability),
+                json_array(&s.returns)
+            )
+        })
+        .collect::<Vec<String>>()
+        .join(",");
+
+    let sizing = match capital {
+        Some(cap) => {
+            let full: Vec<f64> = result.allocations.iter().map(|a| cap * a).collect();
+            let half: Vec<f64> = result.allocations.iter().map(|a| cap * a * 0.5).collect();
+            let quarter: Vec<f64> = result.allocations.iter().map(|a| cap * a * 0.25).collect();
+            format!(
+                r#"{{"full_kelly":{},"half_kelly":{},"quarter_kelly":{},"full_used":{},"full_remaining":{}}}"#,
+                json_array(&full),
+                json_array(&half),
+                json_array(&quarter),
+                json_number(full.iter().sum()),
+                json_number(cap * (1.0 - result.total_allocation).max(0.0))
+            )
+        }
+        None => "null".to_string(),
+    };
+
+    println!(
+        r#"{{"ok":true,"mode":"portfolio_kelly_correlated","inputs":{{"leg_count":{},"scenarios":[{}],"capital":{}}},"result":{{"allocations":{},"total_allocation":{},"expected_log_growth":{},"expected_arithmetic_return":{},"worst_case_multiplier":{},"converged":{},"iterations":{}}},"sizing":{}}}"#,
+        leg_count,
+        scenarios_json,
+        json_optional_number(capital),
+        json_array(&result.allocations),
+        json_number(result.total_allocation),
+        json_number(result.expected_log_growth),
+        json_number(result.expected_arithmetic_return),
+        json_number(result.worst_case_multiplier),
+        result.converged,
+        result.iterations,
+        sizing
+    );
+}
+
 /// 打印使用说明
 pub fn print_usage() {
     println!("用法:");
@@ -916,6 +1062,9 @@ pub fn print_usage() {
     println!("  bo -n                         # 纳什均衡交互式");
     println!("  bo -n <a11> <a12> <a21> <a22> <b11> <b12> <b21> <b22>  # 2x2 纳什均衡");
     println!("  bo -k                         # 组合凯利交互式");
+    println!("  bo -K                         # 相关情景组合凯利交互式");
+    println!("  bo -K <标的数量> <情景数量> <p1> <r11> ... <r1N> ... <pM> <rM1> ... <rMN> [本金]");
+    println!("     说明: p/r 单位均为百分数，r 不得小于 -100%");
     println!("  bo -k <标的数量> <赔率1> <胜率1> ... <赔率N> <胜率N> [本金]  # 组合凯利");
     println!("  bo -k <descriptor1> <descriptor2> ... [本金]  # 跨模式组合凯利");
     println!(
@@ -941,6 +1090,9 @@ pub fn print_usage() {
     println!();
     println!("  bo -n 3 0 5 1 3 5 0 1         # 囚徒困境收益矩阵");
     println!("  bo --json -n 1 -1 -1 1 -1 1 1 -1");
+    println!();
+    println!("  bo -K 2 2 50 20 -10 50 -10 20 10000");
+    println!("  bo --json -K 2 3 30 25 -15 40 5 5 30 -10 20");
     println!();
     println!("  bo -k 2 2.0 60 2.5 55         # 2个标的组合凯利");
     println!("  bo -k 2 2.0 60 2.5 55 10000   # 本金10000");

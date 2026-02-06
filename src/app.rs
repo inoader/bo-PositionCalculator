@@ -5,13 +5,14 @@ use crate::display::{
     print_result, print_result_arbitrage, print_result_arbitrage_json, print_result_json,
     print_result_multi_arbitrage, print_result_multi_arbitrage_json, print_result_nash,
     print_result_nash_json, print_result_polymarket, print_result_polymarket_json,
-    print_result_portfolio, print_result_portfolio_json, print_result_stock,
+    print_result_portfolio, print_result_portfolio_correlated,
+    print_result_portfolio_correlated_json, print_result_portfolio_json, print_result_stock,
     print_result_stock_json,
 };
 use crate::kelly::{build_stock_info, kelly_criterion, kelly_polymarket, kelly_stock};
 use crate::nash::calculate_nash_2x2;
-use crate::portfolio::calculate_portfolio_kelly;
-use crate::types::PortfolioLeg;
+use crate::portfolio::{calculate_portfolio_kelly, calculate_portfolio_kelly_correlated};
+use crate::types::{PortfolioLeg, PortfolioScenario};
 
 #[derive(Clone, Copy)]
 pub enum OutputFormat {
@@ -58,6 +59,11 @@ pub enum ModeRequest {
     },
     Portfolio {
         legs: Vec<PortfolioLeg>,
+        capital: Option<f64>,
+    },
+    PortfolioCorrelated {
+        leg_count: usize,
+        scenarios: Vec<PortfolioScenario>,
         capital: Option<f64>,
     },
 }
@@ -140,6 +146,18 @@ pub fn execute_mode(mode: ModeRequest, output: OutputFormat) {
                 print_result_portfolio_json(&legs, &result, capital);
             } else {
                 print_result_portfolio(&legs, &result, capital);
+            }
+        }
+        ModeRequest::PortfolioCorrelated {
+            leg_count,
+            scenarios,
+            capital,
+        } => {
+            let result = calculate_portfolio_kelly_correlated(leg_count, &scenarios);
+            if output.is_json() {
+                print_result_portfolio_correlated_json(leg_count, &scenarios, &result, capital);
+            } else {
+                print_result_portfolio_correlated(leg_count, &scenarios, &result, capital);
             }
         }
     }

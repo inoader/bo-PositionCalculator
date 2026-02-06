@@ -34,6 +34,8 @@ fn main() {
                     interactive::interactive_multi_arbitrage();
                 } else if args[1] == "-n" {
                     interactive::interactive_nash();
+                } else if args[1] == "-K" {
+                    interactive::interactive_portfolio_correlated();
                 } else if args[1] == "-k" {
                     interactive::interactive_portfolio();
                 }

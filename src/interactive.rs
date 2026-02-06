@@ -10,6 +10,22 @@ use crate::display::{
 use crate::portfolio_input::parse_portfolio_leg_descriptor;
 use crate::validation::{parse_f64, parse_market_price, parse_odds, parse_percent, parse_positive};
 
+fn parse_return_percent_input(input: &str, field_name: &str) -> Result<f64, String> {
+    let value = parse_f64(input, field_name)? / 100.0;
+    if value < -1.0 {
+        Err(format!(
+            "{field_name}不能小于 -100%（当前为 {:.2}%）",
+            value * 100.0
+        ))
+    } else {
+        Ok(value)
+    }
+}
+
+fn probability_sum_tolerance(scenario_count: usize) -> f64 {
+    (scenario_count as f64) * 0.00005 + 1e-9
+}
+
 /// 标准交互式模式
 pub fn interactive() {
     print_title();
@@ -462,6 +478,154 @@ pub fn interactive_nash() {
             ModeRequest::Nash {
                 row_payoffs: [[values[0], values[1]], [values[2], values[3]]],
                 col_payoffs: [[values[4], values[5]], [values[6], values[7]]],
+            },
+            OutputFormat::Text,
+        );
+        println!();
+    }
+}
+
+/// 相关情景组合凯利交互式
+pub fn interactive_portfolio_correlated() {
+    print_title_portfolio();
+    println!("提示: 概率和收益率均按百分数输入，例如 20 表示 20%");
+    println!();
+
+    loop {
+        println!("请输入标的数量 (1-12，输入 q 退出):");
+        print!("> ");
+        io::stdout().flush().unwrap();
+
+        let mut leg_count_input = String::new();
+        io::stdin().read_line(&mut leg_count_input).unwrap();
+        if leg_count_input.trim().to_lowercase() == "q" {
+            println!("再见！");
+            break;
+        }
+
+        let leg_count: usize = match leg_count_input.trim().parse() {
+            Ok(n) if (1..=12).contains(&n) => n,
+            Ok(_) => {
+                println!("✗ 标的数量必须在 1-12 之间\n");
+                continue;
+            }
+            Err(_) => {
+                println!("✗ 无效输入\n");
+                continue;
+            }
+        };
+
+        println!("请输入情景数量 (2-128):");
+        print!("> ");
+        io::stdout().flush().unwrap();
+
+        let mut scenario_count_input = String::new();
+        io::stdin().read_line(&mut scenario_count_input).unwrap();
+        let scenario_count: usize = match scenario_count_input.trim().parse() {
+            Ok(n) if (2..=128).contains(&n) => n,
+            Ok(_) => {
+                println!("✗ 情景数量必须在 2-128 之间\n");
+                continue;
+            }
+            Err(_) => {
+                println!("✗ 无效输入\n");
+                continue;
+            }
+        };
+
+        let mut scenarios = Vec::with_capacity(scenario_count);
+        let mut failed = false;
+        for s in 0..scenario_count {
+            println!(
+                "请输入情景{}: <概率%> + {}个收益率%(空格分隔)",
+                s + 1,
+                leg_count
+            );
+            print!("> ");
+            io::stdout().flush().unwrap();
+
+            let mut line = String::new();
+            io::stdin().read_line(&mut line).unwrap();
+            let fields: Vec<&str> = line.split_whitespace().collect();
+            if fields.len() != leg_count + 1 {
+                println!(
+                    "✗ 需要 {} 个值（1 概率 + {} 收益率）\n",
+                    leg_count + 1,
+                    leg_count
+                );
+                failed = true;
+                break;
+            }
+
+            let prob = match parse_percent(fields[0], &format!("情景{}概率", s + 1)) {
+                Ok(v) => v,
+                Err(e) => {
+                    println!("✗ {}\n", e);
+                    failed = true;
+                    break;
+                }
+            };
+
+            let mut returns = Vec::with_capacity(leg_count);
+            for i in 0..leg_count {
+                let field = format!("情景{}收益{}", s + 1, i + 1);
+                let ret = match parse_return_percent_input(fields[i + 1], &field) {
+                    Ok(v) => v,
+                    Err(e) => {
+                        println!("✗ {}\n", e);
+                        failed = true;
+                        break;
+                    }
+                };
+                returns.push(ret);
+            }
+            if failed {
+                break;
+            }
+
+            scenarios.push(crate::types::PortfolioScenario {
+                probability: prob,
+                returns,
+            });
+        }
+
+        if failed {
+            continue;
+        }
+
+        let prob_sum: f64 = scenarios.iter().map(|s| s.probability).sum();
+        let tolerance = probability_sum_tolerance(scenario_count);
+        if (prob_sum - 1.0).abs() > tolerance {
+            println!(
+                "✗ 所有情景概率之和必须约等于 100%（容差 ±{:.4}%），当前为 {:.4}%\n",
+                tolerance * 100.0,
+                prob_sum * 100.0
+            );
+            continue;
+        }
+
+        println!("请输入本金 (可选，直接回车跳过):");
+        print!("> ");
+        io::stdout().flush().unwrap();
+        let mut capital_input = String::new();
+        io::stdin().read_line(&mut capital_input).unwrap();
+        let capital: Option<f64> = if capital_input.trim().is_empty() {
+            None
+        } else {
+            match parse_positive(capital_input.trim(), "本金") {
+                Ok(n) => Some(n),
+                Err(_) => {
+                    println!("✗ 本金必须为正数，已跳过\n");
+                    None
+                }
+            }
+        };
+
+        execute_mode(
+            ModeRequest::PortfolioCorrelated {
+                leg_count,
+                scenarios,
+                capital,
             },
             OutputFormat::Text,
         );

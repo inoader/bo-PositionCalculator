@@ -126,6 +126,15 @@ pub struct PortfolioLeg {
     pub loss_return: f64,
 }
 
+/// 组合凯利输入（相关情景）
+#[derive(Debug, Clone)]
+pub struct PortfolioScenario {
+    /// 情景发生概率（0-1）
+    pub probability: f64,
+    /// 各标的在该情景下的收益率（相对本金）
+    pub returns: Vec<f64>,
+}
+
 /// 组合凯利计算结果
 #[derive(Debug, Clone)]
 pub struct PortfolioKellyResult {

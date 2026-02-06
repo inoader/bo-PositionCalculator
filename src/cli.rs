@@ -3,6 +3,7 @@
 use crate::app::{ModeRequest, OutputFormat, execute_mode};
 use crate::display::{print_json_error, print_usage};
 use crate::portfolio_input::{build_standard_leg, parse_portfolio_leg_descriptor};
+use crate::types::PortfolioScenario;
 use crate::validation::{parse_f64, parse_market_price, parse_odds, parse_percent, parse_positive};
 
 fn is_help_flag(flag: &str) -> bool {
@@ -15,6 +16,23 @@ fn is_version_flag(flag: &str) -> bool {
 
 fn print_version() {
     println!("bo {}", env!("CARGO_PKG_VERSION"));
+}
+
+fn parse_return_percent(input: &str, field_name: &str) -> Result<f64, String> {
+    let value = parse_f64(input, field_name)? / 100.0;
+    if value < -1.0 {
+        Err(format!(
+            "{field_name}不能小于 -100%（当前为 {:.2}%）",
+            value * 100.0
+        ))
+    } else {
+        Ok(value)
+    }
+}
+
+fn probability_sum_tolerance(scenario_count: usize) -> f64 {
+    // 允许按两位小数录入概率时的累计四舍五入误差
+    (scenario_count as f64) * 0.00005 + 1e-9
 }
 
 fn emit_error(output: OutputFormat, message: &str) {
@@ -54,9 +72,12 @@ pub fn handle_args(args: Vec<String>) {
     let is_arbitrage = args.iter().any(|a| a == "-a");
     let is_multi_arbitrage = args.iter().any(|a| a == "-A");
     let is_nash = args.iter().any(|a| a == "-n");
+    let is_portfolio_correlated = args.iter().any(|a| a == "-K");
     let is_portfolio = args.iter().any(|a| a == "-k");
 
-    if is_portfolio {
+    if is_portfolio_correlated {
+        handle_portfolio_correlated(args, output);
+    } else if is_portfolio {
         handle_portfolio(args, output);
     } else if is_nash {
         handle_nash(args, output);
@@ -536,6 +557,132 @@ fn handle_nash(args: Vec<String>, output: OutputFormat) {
     }
 }
 
+fn handle_portfolio_correlated(args: Vec<String>, output: OutputFormat) {
+    let c_args: Vec<&String> = args.iter().filter(|&a| a != "-K").collect();
+
+    if c_args.len() < 3 {
+        emit_error(output, "相关情景组合凯利模式参数不足");
+        if !output.is_json() {
+            println!();
+            println!(
+                "用法: bo -K <标的数量> <情景数量> <p1> <r11> ... <r1N> ... <pM> <rM1> ... <rMN> [本金]"
+            );
+            println!("说明: 概率和收益率都按百分数输入，例如 50 代表 50%");
+        }
+        return;
+    }
+
+    let leg_count: usize = match c_args[1].parse() {
+        Ok(n) if (1..=12).contains(&n) => n,
+        Ok(_) => {
+            emit_error(output, "标的数量必须在 1-12 之间");
+            return;
+        }
+        Err(_) => {
+            emit_error(output, "标的数量必须是数字");
+            return;
+        }
+    };
+
+    let scenario_count: usize = match c_args[2].parse() {
+        Ok(n) if (2..=128).contains(&n) => n,
+        Ok(_) => {
+            emit_error(output, "情景数量必须在 2-128 之间");
+            return;
+        }
+        Err(_) => {
+            emit_error(output, "情景数量必须是数字");
+            return;
+        }
+    };
+
+    let expected_min = 3 + scenario_count * (1 + leg_count);
+    let has_capital = c_args.len() == expected_min + 1;
+    if c_args.len() != expected_min && !has_capital {
+        emit_error(
+            output,
+            &format!(
+                "参数数量不匹配，期望 {} 个情景，每个情景包含 1 个概率 + {} 个收益率",
+                scenario_count, leg_count
+            ),
+        );
+        if !output.is_json() {
+            println!();
+            println!(
+                "用法: bo -K <标的数量> <情景数量> <p1> <r11> ... <r1N> ... <pM> <rM1> ... <rMN> [本金]"
+            );
+            println!("示例: bo -K 2 2 50 20 -10 50 -10 20 10000");
+        }
+        return;
+    }
+
+    let mut scenarios = Vec::with_capacity(scenario_count);
+    let mut idx = 3;
+    for s in 0..scenario_count {
+        let prob = match parse_percent(c_args[idx], &format!("情景{}概率", s + 1)) {
+            Ok(v) => v,
+            Err(e) => {
+                emit_error(output, &e);
+                return;
+            }
+        };
+        idx += 1;
+
+        let mut returns = Vec::with_capacity(leg_count);
+        for i in 0..leg_count {
+            let field = format!("情景{}收益{}", s + 1, i + 1);
+            let ret = match parse_return_percent(c_args[idx], &field) {
+                Ok(v) => v,
+                Err(e) => {
+                    emit_error(output, &e);
+                    return;
+                }
+            };
+            returns.push(ret);
+            idx += 1;
+        }
+        scenarios.push(PortfolioScenario {
+            probability: prob,
+            returns,
+        });
+    }
+
+    let prob_sum: f64 = scenarios.iter().map(|s| s.probability).sum();
+    let tolerance = probability_sum_tolerance(scenario_count);
+    if (prob_sum - 1.0).abs() > tolerance {
+        emit_error(
+            output,
+            &format!(
+                "所有情景概率之和必须约等于 100%（容差 ±{:.4}%），当前为 {:.4}%",
+                tolerance * 100.0,
+                prob_sum * 100.0
+            ),
+        );
+        return;
+    }
+
+    let capital = if has_capital {
+        match parse_positive(c_args[c_args.len() - 1], "本金") {
+            Ok(v) => Some(v),
+            Err(e) => {
+                emit_error(output, &e);
+                return;
+            }
+        }
+    } else {
+        None
+    };
+
+    execute_mode(
+        ModeRequest::PortfolioCorrelated {
+            leg_count,
+            scenarios,
+            capital,
+        },
+        output,
+    );
+}
+
 fn handle_portfolio(args: Vec<String>, output: OutputFormat) {
     let p_args: Vec<&String> = args.iter().filter(|&a| a != "-k").collect();
 
@@ -675,7 +822,7 @@ pub fn is_interactive_call(args: &[String]) -> bool {
         return true;
     }
 
-    let flags = ["-p", "-s", "-a", "-A", "-n", "-k"];
+    let flags = ["-p", "-s", "-a", "-A", "-n", "-k", "-K"];
     for flag in &flags {
         if args.iter().any(|a| a == *flag) && args.len() == 2 {
             return true;
@@ -683,4 +830,25 @@ pub fn is_interactive_call(args: &[String]) -> bool {
     }
 
     false
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{parse_return_percent, probability_sum_tolerance};
+
+    #[test]
+    fn return_percent_rejects_less_than_negative_hundred() {
+        assert!(parse_return_percent("-100.01", "收益率").is_err());
+    }
+
+    #[test]
+    fn return_percent_accepts_negative_hundred() {
+        assert_eq!(parse_return_percent("-100", "收益率").unwrap(), -1.0);
+    }
+
+    #[test]
+    fn probability_tolerance_accepts_three_way_rounding() {
+        let sum: f64 = 0.3333 + 0.3333 + 0.3333;
+        assert!((sum - 1.0).abs() <= probability_sum_tolerance(3));
+    }
 }
