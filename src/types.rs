@@ -43,6 +43,41 @@ pub struct MultiArbitrageResult {
     pub stake_ratios: Vec<f64>,
 }
 
+/// 2x2 纯策略纳什均衡
+#[derive(Debug, Clone)]
+pub struct NashPureEquilibrium {
+    /// 行玩家策略（0=上，1=下）
+    pub row_strategy: usize,
+    /// 列玩家策略（0=左，1=右）
+    pub col_strategy: usize,
+    /// 该均衡下行玩家收益
+    pub row_payoff: f64,
+    /// 该均衡下列玩家收益
+    pub col_payoff: f64,
+}
+
+/// 2x2 混合策略纳什均衡
+#[derive(Debug, Clone)]
+pub struct NashMixedEquilibrium {
+    /// 行玩家选择“上”策略的概率
+    pub row_top_prob: f64,
+    /// 列玩家选择“左”策略的概率
+    pub col_left_prob: f64,
+    /// 行玩家期望收益
+    pub row_expected_payoff: f64,
+    /// 列玩家期望收益
+    pub col_expected_payoff: f64,
+}
+
+/// 2x2 纳什均衡结果
+#[derive(Debug, Clone)]
+pub struct NashResult {
+    /// 所有纯策略纳什均衡
+    pub pure_equilibria: Vec<NashPureEquilibrium>,
+    /// 唯一内部混合策略均衡（若存在）
+    pub mixed_equilibrium: Option<NashMixedEquilibrium>,
+}
+
 /// 股票交易信息
 #[derive(Debug, Clone)]
 pub struct StockInfo {

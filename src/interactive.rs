@@ -4,11 +4,11 @@ use std::io::{self, Write};
 
 use crate::app::{ModeRequest, OutputFormat, execute_mode};
 use crate::display::{
-    print_title, print_title_arbitrage, print_title_polymarket, print_title_portfolio,
-    print_title_stock, separator,
+    print_title, print_title_arbitrage, print_title_nash, print_title_polymarket,
+    print_title_portfolio, print_title_stock, separator,
 };
 use crate::portfolio_input::parse_portfolio_leg_descriptor;
-use crate::validation::{parse_market_price, parse_odds, parse_percent, parse_positive};
+use crate::validation::{parse_f64, parse_market_price, parse_odds, parse_percent, parse_positive};
 
 /// 标准交互式模式
 pub fn interactive() {
@@ -409,6 +409,60 @@ pub fn interactive_multi_arbitrage() {
 
         execute_mode(
             ModeRequest::MultiArbitrage { odds, capital },
+            OutputFormat::Text,
+        );
+        println!();
+    }
+}
+
+/// 纳什均衡交互式（2x2）
+pub fn interactive_nash() {
+    print_title_nash();
+
+    loop {
+        println!("请输入 8 个收益值: a11 a12 a21 a22 b11 b12 b21 b22 (输入 q 退出):");
+        print!("> ");
+        io::stdout().flush().unwrap();
+
+        let mut line = String::new();
+        io::stdin().read_line(&mut line).unwrap();
+        let trimmed = line.trim();
+
+        if trimmed.to_lowercase() == "q" {
+            println!("再见！");
+            break;
+        }
+
+        let fields: Vec<&str> = trimmed.split_whitespace().collect();
+        if fields.len() != 8 {
+            println!("✗ 请输入 8 个数字，示例: 3 0 5 1 3 5 0 1\n");
+            continue;
+        }
+
+        let labels = ["a11", "a12", "a21", "a22", "b11", "b12", "b21", "b22"];
+        let mut values = [0.0_f64; 8];
+        let mut failed = false;
+
+        for i in 0..8 {
+            match parse_f64(fields[i], labels[i]) {
+                Ok(v) => values[i] = v,
+                Err(e) => {
+                    println!("✗ {}\n", e);
+                    failed = true;
+                    break;
+                }
+            }
+        }
+
+        if failed {
+            continue;
+        }
+
+        execute_mode(
+            ModeRequest::Nash {
+                row_payoffs: [[values[0], values[1]], [values[2], values[3]]],
+                col_payoffs: [[values[4], values[5]], [values[6], values[7]]],
+            },
             OutputFormat::Text,
         );
         println!();

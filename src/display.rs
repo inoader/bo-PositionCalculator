@@ -1,8 +1,8 @@
 //! 显示输出相关功能
 
 use crate::types::{
-    ArbitrageResult, KellyResult, MultiArbitrageResult, PortfolioKellyResult, PortfolioLeg,
-    StockInfo,
+    ArbitrageResult, KellyResult, MultiArbitrageResult, NashResult, PortfolioKellyResult,
+    PortfolioLeg, StockInfo,
 };
 
 // EV 以百分比显示到小数点后两位，这里使用对应阈值避免出现“显示 0.00% 但判定正/负期望”。
@@ -86,6 +86,16 @@ fn json_array(values: &[f64]) -> String {
     format!("[{}]", parts.join(","))
 }
 
+fn json_matrix_2x2(matrix: [[f64; 2]; 2]) -> String {
+    format!(
+        "[[{},{}],[{},{}]]",
+        json_number(matrix[0][0]),
+        json_number(matrix[0][1]),
+        json_number(matrix[1][0]),
+        json_number(matrix[1][1])
+    )
+}
+
 pub fn print_json_error(message: &str) {
     println!(r#"{{"ok":false,"error":"{}"}}"#, json_escape(message));
 }
@@ -132,6 +142,15 @@ pub fn print_title_arbitrage() {
 pub fn print_title_portfolio() {
     separator();
     println!("                      组合仓位计算器");
+    separator();
+    println!();
+}
+
+/// 打印纳什均衡标题
+pub fn print_title_nash() {
+    separator();
+    println!("                      纳什均衡计算器");
+    println!("                    2x2 Normal Form Game");
     separator();
     println!();
 }
@@ -532,6 +551,69 @@ pub fn print_result_portfolio(
     separator();
 }
 
+/// 打印纳什均衡结果
+pub fn print_result_nash(
+    row_payoffs: [[f64; 2]; 2],
+    col_payoffs: [[f64; 2]; 2],
+    result: &NashResult,
+) {
+    println!();
+    separator();
+    println!("                      2x2 纳什均衡结果");
+    separator();
+    println!();
+    println!("  输入收益矩阵:");
+    println!(
+        "    ├─ 行玩家 A: [[{:.4}, {:.4}], [{:.4}, {:.4}]]",
+        row_payoffs[0][0], row_payoffs[0][1], row_payoffs[1][0], row_payoffs[1][1]
+    );
+    println!(
+        "    └─ 列玩家 B: [[{:.4}, {:.4}], [{:.4}, {:.4}]]",
+        col_payoffs[0][0], col_payoffs[0][1], col_payoffs[1][0], col_payoffs[1][1]
+    );
+    println!();
+
+    println!("  纯策略纳什均衡:");
+    if result.pure_equilibria.is_empty() {
+        println!("    └─ 无");
+    } else {
+        for (idx, eq) in result.pure_equilibria.iter().enumerate() {
+            let row_label = if eq.row_strategy == 0 { "上" } else { "下" };
+            let col_label = if eq.col_strategy == 0 { "左" } else { "右" };
+            println!(
+                "    ├─ 均衡{}: (行 {}, 列 {}) -> 行收益 {:.4}, 列收益 {:.4}",
+                idx + 1,
+                row_label,
+                col_label,
+                eq.row_payoff,
+                eq.col_payoff
+            );
+        }
+    }
+    println!();
+
+    println!("  混合策略纳什均衡:");
+    if let Some(mixed) = &result.mixed_equilibrium {
+        println!(
+            "    ├─ 行玩家: 上 {:.2}%, 下 {:.2}%",
+            mixed.row_top_prob * 100.0,
+            (1.0 - mixed.row_top_prob) * 100.0
+        );
+        println!(
+            "    ├─ 列玩家: 左 {:.2}%, 右 {:.2}%",
+            mixed.col_left_prob * 100.0,
+            (1.0 - mixed.col_left_prob) * 100.0
+        );
+        println!("    ├─ 行玩家期望收益: {:.4}", mixed.row_expected_payoff);
+        println!("    └─ 列玩家期望收益: {:.4}", mixed.col_expected_payoff);
+    } else {
+        println!("    └─ 无内部混合策略均衡（或解不唯一）");
+    }
+    println!();
+
+    separator();
+}
+
 /// 打印标准凯利 JSON 结果
 pub fn print_result_json(odds: f64, win_rate: f64, result: &KellyResult, capital: Option<f64>) {
     let fraction = effective_fraction(result.expected_value, result.optimal_fraction);
@@ -714,6 +796,47 @@ pub fn print_result_multi_arbitrage_json(
     );
 }
 
+/// 打印纳什均衡 JSON 结果
+pub fn print_result_nash_json(
+    row_payoffs: [[f64; 2]; 2],
+    col_payoffs: [[f64; 2]; 2],
+    result: &NashResult,
+) {
+    let pure_equilibria = result
+        .pure_equilibria
+        .iter()
+        .map(|eq| {
+            format!(
+                r#"{{"row_strategy":{},"col_strategy":{},"row_payoff":{},"col_payoff":{}}}"#,
+                eq.row_strategy,
+                eq.col_strategy,
+                json_number(eq.row_payoff),
+                json_number(eq.col_payoff)
+            )
+        })
+        .collect::<Vec<String>>()
+        .join(",");
+
+    let mixed_equilibrium = match &result.mixed_equilibrium {
+        Some(mixed) => format!(
+            r#"{{"row_top_prob":{},"col_left_prob":{},"row_expected_payoff":{},"col_expected_payoff":{}}}"#,
+            json_number(mixed.row_top_prob),
+            json_number(mixed.col_left_prob),
+            json_number(mixed.row_expected_payoff),
+            json_number(mixed.col_expected_payoff)
+        ),
+        None => "null".to_string(),
+    };
+
+    println!(
+        r#"{{"ok":true,"mode":"nash_2x2","inputs":{{"row_payoffs":{},"col_payoffs":{}}},"result":{{"pure_equilibria":[{}],"mixed_equilibrium":{}}}}}"#,
+        json_matrix_2x2(row_payoffs),
+        json_matrix_2x2(col_payoffs),
+        pure_equilibria,
+        mixed_equilibrium
+    );
+}
+
 /// 打印组合凯利 JSON 结果
 pub fn print_result_portfolio_json(
     legs: &[PortfolioLeg],
@@ -770,6 +893,8 @@ pub fn print_result_portfolio_json(
 /// 打印使用说明
 pub fn print_usage() {
     println!("用法:");
+    println!("  bo -h | -help                # 显示用法");
+    println!("  bo -v | -version             # 显示版本");
     println!("  bo                           # 交互式模式");
     println!("  bo --json ...                # JSON 输出（仅命令行参数模式）");
     println!("  bo <赔率> <胜率>              # 命令行模式");
@@ -788,6 +913,8 @@ pub fn print_usage() {
     println!("  bo -a <赔率1> <赔率2> <本金>");
     println!();
     println!("  bo -A <标的数量> <赔率1> ... <赔率N> [本金]  # 多标的套利");
+    println!("  bo -n                         # 纳什均衡交互式");
+    println!("  bo -n <a11> <a12> <a21> <a22> <b11> <b12> <b21> <b22>  # 2x2 纳什均衡");
     println!("  bo -k                         # 组合凯利交互式");
     println!("  bo -k <标的数量> <赔率1> <胜率1> ... <赔率N> <胜率N> [本金]  # 组合凯利");
     println!("  bo -k <descriptor1> <descriptor2> ... [本金]  # 跨模式组合凯利");
@@ -811,6 +938,9 @@ pub fn print_usage() {
     println!();
     println!("  bo -A 3 2.0 3.5 4.0           # 3个标的，赔率分别为2.0, 3.5, 4.0");
     println!("  bo -A 3 2.0 3.5 4.0 1000      # 本金1000");
+    println!();
+    println!("  bo -n 3 0 5 1 3 5 0 1         # 囚徒困境收益矩阵");
+    println!("  bo --json -n 1 -1 -1 1 -1 1 1 -1");
     println!();
     println!("  bo -k 2 2.0 60 2.5 55         # 2个标的组合凯利");
     println!("  bo -k 2 2.0 60 2.5 55 10000   # 本金10000");

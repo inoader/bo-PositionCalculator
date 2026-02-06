@@ -1,6 +1,6 @@
 [package]
 name = "bo"
-version = "0.6.0"
+version = "0.7.0"
 edition = "2024"
 description = "仓位管理计算器 - 投注与交易仓位管理工具"
 authors = ["inoader"]

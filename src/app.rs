@@ -3,11 +3,13 @@
 use crate::arbitrage::{calculate_arbitrage, calculate_multi_arbitrage};
 use crate::display::{
     print_result, print_result_arbitrage, print_result_arbitrage_json, print_result_json,
-    print_result_multi_arbitrage, print_result_multi_arbitrage_json, print_result_polymarket,
-    print_result_polymarket_json, print_result_portfolio, print_result_portfolio_json,
-    print_result_stock, print_result_stock_json,
+    print_result_multi_arbitrage, print_result_multi_arbitrage_json, print_result_nash,
+    print_result_nash_json, print_result_polymarket, print_result_polymarket_json,
+    print_result_portfolio, print_result_portfolio_json, print_result_stock,
+    print_result_stock_json,
 };
 use crate::kelly::{build_stock_info, kelly_criterion, kelly_polymarket, kelly_stock};
+use crate::nash::calculate_nash_2x2;
 use crate::portfolio::calculate_portfolio_kelly;
 use crate::types::PortfolioLeg;
 
@@ -49,6 +51,10 @@ pub enum ModeRequest {
     MultiArbitrage {
         odds: Vec<f64>,
         capital: Option<f64>,
+    },
+    Nash {
+        row_payoffs: [[f64; 2]; 2],
+        col_payoffs: [[f64; 2]; 2],
     },
     Portfolio {
         legs: Vec<PortfolioLeg>,
@@ -115,6 +121,17 @@ pub fn execute_mode(mode: ModeRequest, output: OutputFormat) {
                 print_result_multi_arbitrage_json(&odds, &result, capital);
             } else {
                 print_result_multi_arbitrage(&odds, &result, capital);
+            }
+        }
+        ModeRequest::Nash {
+            row_payoffs,
+            col_payoffs,
+        } => {
+            let result = calculate_nash_2x2(row_payoffs, col_payoffs);
+            if output.is_json() {
+                print_result_nash_json(row_payoffs, col_payoffs, &result);
+            } else {
+                print_result_nash(row_payoffs, col_payoffs, &result);
             }
         }
         ModeRequest::Portfolio { legs, capital } => {

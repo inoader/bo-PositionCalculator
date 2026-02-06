@@ -3,7 +3,19 @@
 use crate::app::{ModeRequest, OutputFormat, execute_mode};
 use crate::display::{print_json_error, print_usage};
 use crate::portfolio_input::{build_standard_leg, parse_portfolio_leg_descriptor};
-use crate::validation::{parse_market_price, parse_odds, parse_percent, parse_positive};
+use crate::validation::{parse_f64, parse_market_price, parse_odds, parse_percent, parse_positive};
+
+fn is_help_flag(flag: &str) -> bool {
+    matches!(flag, "-h" | "-help" | "--help")
+}
+
+fn is_version_flag(flag: &str) -> bool {
+    matches!(flag, "-v" | "-version" | "--version")
+}
+
+fn print_version() {
+    println!("bo {}", env!("CARGO_PKG_VERSION"));
+}
 
 fn emit_error(output: OutputFormat, message: &str) {
     if output.is_json() {
@@ -23,6 +35,15 @@ pub fn handle_args(args: Vec<String>) {
 
     let args: Vec<String> = args.into_iter().filter(|a| a != "--json").collect();
 
+    if args.len() == 2 && is_help_flag(&args[1]) {
+        print_usage();
+        return;
+    }
+    if args.len() == 2 && is_version_flag(&args[1]) {
+        print_version();
+        return;
+    }
+
     if args.len() == 1 && output.is_json() {
         emit_error(output, "JSON 模式需要命令行参数，不支持交互式模式");
         return;
@@ -32,10 +53,13 @@ pub fn handle_args(args: Vec<String>) {
     let is_stock = args.iter().any(|a| a == "-s");
     let is_arbitrage = args.iter().any(|a| a == "-a");
     let is_multi_arbitrage = args.iter().any(|a| a == "-A");
+    let is_nash = args.iter().any(|a| a == "-n");
     let is_portfolio = args.iter().any(|a| a == "-k");
 
     if is_portfolio {
         handle_portfolio(args, output);
+    } else if is_nash {
+        handle_nash(args, output);
     } else if is_multi_arbitrage {
         handle_multi_arbitrage(args, output);
     } else if is_arbitrage {
@@ -52,8 +76,10 @@ pub fn handle_args(args: Vec<String>) {
 fn handle_standard(args: Vec<String>, output: OutputFormat) {
     match args.len() {
         2 => {
-            if args[1] == "-h" || args[1] == "--help" {
+            if is_help_flag(&args[1]) {
                 print_usage();
+            } else if is_version_flag(&args[1]) {
+                print_version();
             } else {
                 emit_error(output, "参数不足");
                 if !output.is_json() {
@@ -469,6 +495,47 @@ fn handle_multi_arbitrage(args: Vec<String>, output: OutputFormat) {
     execute_mode(ModeRequest::MultiArbitrage { odds, capital }, output);
 }
 
+fn handle_nash(args: Vec<String>, output: OutputFormat) {
+    let n_args: Vec<&String> = args.iter().filter(|&a| a != "-n").collect();
+
+    match n_args.len() {
+        1 => {
+            emit_error(output, "纳什模式参数不足");
+        }
+        9 => {
+            let labels = ["a11", "a12", "a21", "a22", "b11", "b12", "b21", "b22"];
+            let mut values = [0.0_f64; 8];
+
+            for i in 0..8 {
+                let value = match parse_f64(n_args[i + 1], labels[i]) {
+                    Ok(v) => v,
+                    Err(e) => {
+                        emit_error(output, &e);
+                        return;
+                    }
+                };
+                values[i] = value;
+            }
+
+            execute_mode(
+                ModeRequest::Nash {
+                    row_payoffs: [[values[0], values[1]], [values[2], values[3]]],
+                    col_payoffs: [[values[4], values[5]], [values[6], values[7]]],
+                },
+                output,
+            );
+        }
+        _ => {
+            emit_error(output, "纳什模式参数错误");
+            if !output.is_json() {
+                println!();
+                println!("用法: bo -n <a11> <a12> <a21> <a22> <b11> <b12> <b21> <b22>");
+                println!("示例: bo -n 3 0 5 1 3 5 0 1    # 囚徒困境收益矩阵");
+            }
+        }
+    }
+}
+
 fn handle_portfolio(args: Vec<String>, output: OutputFormat) {
     let p_args: Vec<&String> = args.iter().filter(|&a| a != "-k").collect();
 
@@ -608,7 +675,7 @@ pub fn is_interactive_call(args: &[String]) -> bool {
         return true;
     }
 
-    let flags = ["-p", "-s", "-a", "-A", "-k"];
+    let flags = ["-p", "-s", "-a", "-A", "-n", "-k"];
     for flag in &flags {
         if args.iter().any(|a| a == *flag) && args.len() == 2 {
             return true;
