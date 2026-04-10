@@ -9,7 +9,7 @@ fn nearly_eq(a: f64, b: f64) -> bool {
 }
 
 fn in_unit_interval(v: f64) -> bool {
-    v >= -EPS && v <= 1.0 + EPS
+    (-EPS..=1.0 + EPS).contains(&v)
 }
 
 fn clamp01(v: f64) -> f64 {

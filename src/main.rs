@@ -1,6 +1,5 @@
-//! 仓位管理计算器
-//! f* = (bp - q) / b
-//! 其中 b 为赔率-1，p 为胜率，q = 1-p
+use std::env;
+use std::process::ExitCode;
 
 mod app;
 mod arbitrage;
@@ -14,9 +13,7 @@ mod portfolio_input;
 mod types;
 mod validation;
 
-use std::env;
-
-fn main() {
+fn main() -> ExitCode {
     let args: Vec<String> = env::args().collect();
 
     // 检查是否为交互式模式调用
@@ -42,7 +39,8 @@ fn main() {
             }
             _ => unreachable!(),
         }
+        ExitCode::SUCCESS
     } else {
-        cli::handle_args(args);
+        cli::handle_args(args)
     }
 }

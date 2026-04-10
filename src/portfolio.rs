@@ -36,29 +36,35 @@ fn enumerate_independent_states(legs: &[PortfolioLeg]) -> Vec<OutcomeState> {
     states
 }
 
-fn states_from_scenarios(leg_count: usize, scenarios: &[PortfolioScenario]) -> Vec<OutcomeState> {
-    scenarios
-        .iter()
-        .map(|scenario| {
-            assert!(
-                scenario.probability.is_finite() && scenario.probability >= 0.0,
-                "scenario probability must be finite and non-negative"
-            );
-            assert!(
-                scenario.returns.len() == leg_count,
-                "scenario returns length mismatch"
-            );
-            assert!(
-                scenario.returns.iter().all(|r| r.is_finite()),
-                "scenario return must be finite"
-            );
+fn states_from_scenarios(
+    leg_count: usize,
+    scenarios: &[PortfolioScenario],
+) -> Result<Vec<OutcomeState>, String> {
+    let mut states = Vec::with_capacity(scenarios.len());
 
-            OutcomeState {
-                prob: scenario.probability,
-                returns: scenario.returns.clone(),
-            }
-        })
-        .collect()
+    for (index, scenario) in scenarios.iter().enumerate() {
+        if !scenario.probability.is_finite() || scenario.probability < 0.0 {
+            return Err(format!("情景{}概率必须是有限的非负数", index + 1));
+        }
+        if scenario.returns.len() != leg_count {
+            return Err(format!(
+                "情景{}收益数量不匹配，期望 {} 个，实际 {} 个",
+                index + 1,
+                leg_count,
+                scenario.returns.len()
+            ));
+        }
+        if scenario.returns.iter().any(|r| !r.is_finite()) {
+            return Err(format!("情景{}收益率必须是有限数字", index + 1));
+        }
+
+        states.push(OutcomeState {
+            prob: scenario.probability,
+            returns: scenario.returns.clone(),
+        });
+    }
+
+    Ok(states)
 }
 
 fn objective_and_gradient(allocations: &[f64], states: &[OutcomeState]) -> (f64, Vec<f64>) {
@@ -274,10 +280,10 @@ pub fn calculate_portfolio_kelly(legs: &[PortfolioLeg]) -> PortfolioKellyResult 
 pub fn calculate_portfolio_kelly_correlated(
     leg_count: usize,
     scenarios: &[PortfolioScenario],
-) -> PortfolioKellyResult {
-    let states = states_from_scenarios(leg_count, scenarios);
+) -> Result<PortfolioKellyResult, String> {
+    let states = states_from_scenarios(leg_count, scenarios)?;
     let allocations = initial_allocations_correlated(leg_count, &states);
-    solve_with_states(leg_count, &states, allocations)
+    Ok(solve_with_states(leg_count, &states, allocations))
 }
 
 #[cfg(test)]
@@ -381,7 +387,7 @@ mod tests {
                 returns: vec![-0.9, -0.9],
             },
         ];
-        let result = calculate_portfolio_kelly_correlated(2, &scenarios);
+        let result = calculate_portfolio_kelly_correlated(2, &scenarios).unwrap();
         assert!(result.total_allocation < 0.5);
         assert!(result.allocations[0] >= 0.0);
         assert!(result.allocations[1] >= 0.0);
@@ -399,7 +405,7 @@ mod tests {
                 returns: vec![-0.1, 0.2],
             },
         ];
-        let result = calculate_portfolio_kelly_correlated(2, &scenarios);
+        let result = calculate_portfolio_kelly_correlated(2, &scenarios).unwrap();
         assert!(result.allocations[0] > 0.2);
         assert!(result.allocations[1] > 0.2);
         let diff = (result.allocations[0] - result.allocations[1]).abs();
@@ -418,7 +424,7 @@ mod tests {
                 returns: vec![-0.9],
             },
         ];
-        let result = calculate_portfolio_kelly_correlated(1, &scenarios);
+        let result = calculate_portfolio_kelly_correlated(1, &scenarios).unwrap();
         assert!(result.total_allocation > 0.95);
     }
 }

@@ -6,8 +6,8 @@
 
 支持标准投注、Polymarket 预测市场、股票交易、套利/抽水、纳什均衡、组合凯利（独立）与相关情景组合凯利（非独立）计算。
 
-[![Release](https://img.shields.io/github/v/release/inoader/bo)](https://github.com/inoader/bo/releases/latest)
-[![Build](https://img.shields.io/github/actions/workflow/status/inoader/bo/release.yml?branch=main)](https://github.com/inoader/bo/actions)
+[![npm](https://img.shields.io/npm/v/%40inoader%2Fbo)](https://www.npmjs.com/package/@inoader/bo)
+[![Publish](https://img.shields.io/github/actions/workflow/status/inoader/bo/release.yml?branch=main)](https://github.com/inoader/bo/actions)
 
 </div>
 
@@ -28,29 +28,19 @@
 
 ## 安装
 
-### 方式一：下载预编译二进制
-
-从 [Releases](https://github.com/inoader/bo/releases) 页面下载对应平台的二进制文件：
+### 方式一：通过 npm 安装
 
 ```bash
-# Linux
-wget https://github.com/inoader/bo/releases/latest/download/bo-x86_64-linux
-chmod +x bo-x86_64-linux
-mv bo-x86_64-linux bo
-
-# macOS (Intel)
-wget https://github.com/inoader/bo/releases/latest/download/bo-x86_64-apple-darwin
-chmod +x bo-x86_64-apple-darwin
-mv bo-x86_64-apple-darwin bo
-
-# macOS (Apple Silicon)
-wget https://github.com/inoader/bo/releases/latest/download/bo-aarch64-apple-darwin
-chmod +x bo-aarch64-apple-darwin
-mv bo-aarch64-apple-darwin bo
-
-# Windows
-# 下载 bo-x86_64-windows.exe 并重命名为 bo.exe
+npm install -g @inoader/bo
 ```
+
+安装后可直接使用：
+
+```bash
+bo 2.0 60
+```
+
+> npm 包内置 Linux x64、macOS Intel、macOS Apple Silicon 与 Windows x64 的预编译可执行文件；普通安装不需要 Rust 工具链。
 
 ### 方式二：从源码编译
 
@@ -61,6 +51,19 @@ cargo build --release
 ```
 
 二进制文件位于 `target/release/bo`。
+
+## 发布
+
+项目通过 GitHub Actions 构建多平台二进制并发布到 npm，不再上传 GitHub Release 附件。
+
+发布前更新 `package.json` 与 `Cargo.toml` 中的版本号，然后推送对应 tag：
+
+```bash
+git tag v1.0.0
+git push origin v1.0.0
+```
+
+发布流程需要在仓库 Secrets 中配置具备 npm 发布权限的 `NPM_TOKEN`。
 
 ## 使用方法
 

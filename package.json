@@ -1,0 +1,37 @@
+{
+  "name": "@inoader/bo",
+  "version": "1.0.0",
+  "description": "仓位管理计算器 - 投注与交易仓位管理工具",
+  "license": "MIT",
+  "author": "inoader",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/inoader/bo.git"
+  },
+  "bugs": {
+    "url": "https://github.com/inoader/bo/issues"
+  },
+  "homepage": "https://github.com/inoader/bo#readme",
+  "bin": {
+    "bo": "npm/bo.js"
+  },
+  "files": [
+    "LICENSE",
+    "README.md",
+    "npm/bo.js",
+    "npm/bin/darwin-arm64",
+    "npm/bin/darwin-x64",
+    "npm/bin/linux-x64",
+    "npm/bin/win32-x64"
+  ],
+  "scripts": {
+    "test": "cargo test",
+    "pack:check": "npm pack --dry-run"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

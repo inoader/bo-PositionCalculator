@@ -10,6 +10,13 @@ use crate::display::{
 use crate::portfolio_input::parse_portfolio_leg_descriptor;
 use crate::validation::{parse_f64, parse_market_price, parse_odds, parse_percent, parse_positive};
 
+fn execute_text(mode: ModeRequest) {
+    match execute_mode(mode, OutputFormat::Text) {
+        Ok(()) => {}
+        Err(e) => println!("✗ {}\n", e),
+    }
+}
+
 fn parse_return_percent_input(input: &str, field_name: &str) -> Result<f64, String> {
     let value = parse_f64(input, field_name)? / 100.0;
     if value < -1.0 {
@@ -85,14 +92,11 @@ pub fn interactive() {
             }
         };
 
-        execute_mode(
-            ModeRequest::Standard {
-                odds,
-                win_rate,
-                capital,
-            },
-            OutputFormat::Text,
-        );
+        execute_text(ModeRequest::Standard {
+            odds,
+            win_rate,
+            capital,
+        });
         println!();
     }
 }
@@ -156,14 +160,11 @@ pub fn interactive_polymarket() {
             }
         };
 
-        execute_mode(
-            ModeRequest::Polymarket {
-                market_price,
-                your_probability,
-                capital,
-            },
-            OutputFormat::Text,
-        );
+        execute_text(ModeRequest::Polymarket {
+            market_price,
+            your_probability,
+            capital,
+        });
         println!();
     }
 }
@@ -265,16 +266,13 @@ pub fn interactive_stock() {
             }
         };
 
-        execute_mode(
-            ModeRequest::Stock {
-                entry_price,
-                target_price,
-                stop_loss,
-                win_rate,
-                capital,
-            },
-            OutputFormat::Text,
-        );
+        execute_text(ModeRequest::Stock {
+            entry_price,
+            target_price,
+            stop_loss,
+            win_rate,
+            capital,
+        });
         println!();
     }
 }
@@ -338,14 +336,11 @@ pub fn interactive_arbitrage() {
             }
         };
 
-        execute_mode(
-            ModeRequest::Arbitrage {
-                odds1,
-                odds2,
-                capital,
-            },
-            OutputFormat::Text,
-        );
+        execute_text(ModeRequest::Arbitrage {
+            odds1,
+            odds2,
+            capital,
+        });
         println!();
     }
 }
@@ -423,10 +418,7 @@ pub fn interactive_multi_arbitrage() {
             }
         };
 
-        execute_mode(
-            ModeRequest::MultiArbitrage { odds, capital },
-            OutputFormat::Text,
-        );
+        execute_text(ModeRequest::MultiArbitrage { odds, capital });
         println!();
     }
 }
@@ -474,13 +466,10 @@ pub fn interactive_nash() {
             continue;
         }
 
-        execute_mode(
-            ModeRequest::Nash {
-                row_payoffs: [[values[0], values[1]], [values[2], values[3]]],
-                col_payoffs: [[values[4], values[5]], [values[6], values[7]]],
-            },
-            OutputFormat::Text,
-        );
+        execute_text(ModeRequest::Nash {
+            row_payoffs: [[values[0], values[1]], [values[2], values[3]]],
+            col_payoffs: [[values[4], values[5]], [values[6], values[7]]],
+        });
         println!();
     }
 }
@@ -621,14 +610,11 @@ pub fn interactive_portfolio_correlated() {
             }
         };
 
-        execute_mode(
-            ModeRequest::PortfolioCorrelated {
-                leg_count,
-                scenarios,
-                capital,
-            },
-            OutputFormat::Text,
-        );
+        execute_text(ModeRequest::PortfolioCorrelated {
+            leg_count,
+            scenarios,
+            capital,
+        });
         println!();
     }
 }
@@ -706,13 +692,10 @@ pub fn interactive_portfolio() {
             }
         };
 
-        execute_mode(
-            ModeRequest::Portfolio {
-                legs: bets,
-                capital,
-            },
-            OutputFormat::Text,
-        );
+        execute_text(ModeRequest::Portfolio {
+            legs: bets,
+            capital,
+        });
         println!();
     }
 }

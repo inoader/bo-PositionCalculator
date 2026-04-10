@@ -68,7 +68,7 @@ pub enum ModeRequest {
     },
 }
 
-pub fn execute_mode(mode: ModeRequest, output: OutputFormat) {
+pub fn execute_mode(mode: ModeRequest, output: OutputFormat) -> Result<(), String> {
     match mode {
         ModeRequest::Standard {
             odds,
@@ -153,7 +153,7 @@ pub fn execute_mode(mode: ModeRequest, output: OutputFormat) {
             scenarios,
             capital,
         } => {
-            let result = calculate_portfolio_kelly_correlated(leg_count, &scenarios);
+            let result = calculate_portfolio_kelly_correlated(leg_count, &scenarios)?;
             if output.is_json() {
                 print_result_portfolio_correlated_json(leg_count, &scenarios, &result, capital);
             } else {
@@ -161,4 +161,6 @@ pub fn execute_mode(mode: ModeRequest, output: OutputFormat) {
             }
         }
     }
+
+    Ok(())
 }

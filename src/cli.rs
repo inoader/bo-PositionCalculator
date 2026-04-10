@@ -1,10 +1,14 @@
 //! CLI 命令行模式
 
+use std::process::ExitCode;
+
 use crate::app::{ModeRequest, OutputFormat, execute_mode};
 use crate::display::{print_json_error, print_usage};
 use crate::portfolio_input::{build_standard_leg, parse_portfolio_leg_descriptor};
 use crate::types::PortfolioScenario;
 use crate::validation::{parse_f64, parse_market_price, parse_odds, parse_percent, parse_positive};
+
+const MODE_FLAGS: [&str; 7] = ["-p", "-s", "-a", "-A", "-n", "-k", "-K"];
 
 fn is_help_flag(flag: &str) -> bool {
     matches!(flag, "-h" | "-help" | "--help")
@@ -35,16 +39,45 @@ fn probability_sum_tolerance(scenario_count: usize) -> f64 {
     (scenario_count as f64) * 0.00005 + 1e-9
 }
 
-fn emit_error(output: OutputFormat, message: &str) {
+fn emit_error(output: OutputFormat, message: &str, show_usage: bool) -> ExitCode {
     if output.is_json() {
         print_json_error(message);
     } else {
-        println!("✗ {}", message);
+        eprintln!("✗ {}", message);
+        if show_usage {
+            print_usage();
+        }
+    }
+
+    ExitCode::FAILURE
+}
+
+fn finish(mode: ModeRequest, output: OutputFormat) -> ExitCode {
+    match execute_mode(mode, output) {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(e) => emit_error(output, &e, false),
     }
 }
 
+fn args_without_flag<'a>(args: &'a [String], flag: &str) -> Vec<&'a str> {
+    args.iter()
+        .skip(1)
+        .filter_map(|arg| {
+            if arg == flag {
+                None
+            } else {
+                Some(arg.as_str())
+            }
+        })
+        .collect()
+}
+
+fn user_args(args: &[String]) -> Vec<&str> {
+    args.iter().skip(1).map(String::as_str).collect()
+}
+
 /// 处理命令行参数
-pub fn handle_args(args: Vec<String>) {
+pub fn handle_args(args: Vec<String>) -> ExitCode {
     let output = if args.iter().any(|a| a == "--json") {
         OutputFormat::Json
     } else {
@@ -55,594 +88,242 @@ pub fn handle_args(args: Vec<String>) {
 
     if args.len() == 2 && is_help_flag(&args[1]) {
         print_usage();
-        return;
+        return ExitCode::SUCCESS;
     }
     if args.len() == 2 && is_version_flag(&args[1]) {
         print_version();
-        return;
+        return ExitCode::SUCCESS;
     }
-
     if args.len() == 1 && output.is_json() {
-        emit_error(output, "JSON 模式需要命令行参数，不支持交互式模式");
-        return;
+        return emit_error(output, "JSON 模式需要命令行参数，不支持交互式模式", false);
     }
 
-    let is_polymarket = args.iter().any(|a| a == "-p");
-    let is_stock = args.iter().any(|a| a == "-s");
-    let is_arbitrage = args.iter().any(|a| a == "-a");
-    let is_multi_arbitrage = args.iter().any(|a| a == "-A");
-    let is_nash = args.iter().any(|a| a == "-n");
-    let is_portfolio_correlated = args.iter().any(|a| a == "-K");
-    let is_portfolio = args.iter().any(|a| a == "-k");
+    let present_flags: Vec<&str> = MODE_FLAGS
+        .iter()
+        .copied()
+        .filter(|flag| args.iter().any(|arg| arg == flag))
+        .collect();
 
-    if is_portfolio_correlated {
-        handle_portfolio_correlated(args, output);
-    } else if is_portfolio {
-        handle_portfolio(args, output);
-    } else if is_nash {
-        handle_nash(args, output);
-    } else if is_multi_arbitrage {
-        handle_multi_arbitrage(args, output);
-    } else if is_arbitrage {
-        handle_arbitrage(args, output);
-    } else if is_stock {
-        handle_stock(args, output);
-    } else if is_polymarket {
-        handle_polymarket(args, output);
-    } else {
-        handle_standard(args, output);
-    }
-}
-
-fn handle_standard(args: Vec<String>, output: OutputFormat) {
-    match args.len() {
-        2 => {
-            if is_help_flag(&args[1]) {
-                print_usage();
-            } else if is_version_flag(&args[1]) {
-                print_version();
-            } else {
-                emit_error(output, "参数不足");
-                if !output.is_json() {
-                    print_usage();
-                }
-            }
-        }
-        3 => {
-            let odds = match parse_odds(&args[1], "赔率") {
-                Ok(v) => v,
-                Err(e) => {
-                    emit_error(output, &e);
-                    return;
-                }
-            };
-            let win_rate = match parse_percent(&args[2], "胜率") {
-                Ok(v) => v,
-                Err(e) => {
-                    emit_error(output, &e);
-                    return;
-                }
-            };
-            execute_mode(
-                ModeRequest::Standard {
-                    odds,
-                    win_rate,
-                    capital: None,
-                },
-                output,
-            );
-        }
-        4 => {
-            let odds = match parse_odds(&args[1], "赔率") {
-                Ok(v) => v,
-                Err(e) => {
-                    emit_error(output, &e);
-                    return;
-                }
-            };
-            let win_rate = match parse_percent(&args[2], "胜率") {
-                Ok(v) => v,
-                Err(e) => {
-                    emit_error(output, &e);
-                    return;
-                }
-            };
-            let capital = match parse_positive(&args[3], "本金") {
-                Ok(v) => v,
-                Err(e) => {
-                    emit_error(output, &e);
-                    return;
-                }
-            };
-            execute_mode(
-                ModeRequest::Standard {
-                    odds,
-                    win_rate,
-                    capital: Some(capital),
-                },
-                output,
-            );
-        }
-        _ => {
-            emit_error(output, "参数错误");
-            if !output.is_json() {
-                print_usage();
-            }
-        }
-    }
-}
-
-fn handle_polymarket(args: Vec<String>, output: OutputFormat) {
-    let pm_args: Vec<&String> = args.iter().filter(|&a| a != "-p").collect();
-
-    match pm_args.len() {
-        1 => {
-            emit_error(output, "Polymarket 模式参数不足");
-        }
-        3 => {
-            let market_price = match parse_market_price(pm_args[1]) {
-                Ok(v) => v,
-                Err(e) => {
-                    emit_error(output, &e);
-                    return;
-                }
-            };
-            let your_prob = match parse_percent(pm_args[2], "你的概率") {
-                Ok(v) => v,
-                Err(e) => {
-                    emit_error(output, &e);
-                    return;
-                }
-            };
-            execute_mode(
-                ModeRequest::Polymarket {
-                    market_price,
-                    your_probability: your_prob,
-                    capital: None,
-                },
-                output,
-            );
-        }
-        4 => {
-            let market_price = match parse_market_price(pm_args[1]) {
-                Ok(v) => v,
-                Err(e) => {
-                    emit_error(output, &e);
-                    return;
-                }
-            };
-            let your_prob = match parse_percent(pm_args[2], "你的概率") {
-                Ok(v) => v,
-                Err(e) => {
-                    emit_error(output, &e);
-                    return;
-                }
-            };
-            let capital = match parse_positive(pm_args[3], "本金") {
-                Ok(v) => v,
-                Err(e) => {
-                    emit_error(output, &e);
-                    return;
-                }
-            };
-            execute_mode(
-                ModeRequest::Polymarket {
-                    market_price,
-                    your_probability: your_prob,
-                    capital: Some(capital),
-                },
-                output,
-            );
-        }
-        _ => {
-            emit_error(output, "Polymarket 模式参数错误");
-            if !output.is_json() {
-                println!();
-                println!("用法: bo -p <市场价格> <你的概率> [本金]");
-                println!("示例: bo -p 60 75    # 市场价格60c，你认为75%");
-            }
-        }
-    }
-}
-
-fn handle_stock(args: Vec<String>, output: OutputFormat) {
-    let s_args: Vec<&String> = args.iter().filter(|&a| a != "-s").collect();
-
-    match s_args.len() {
-        1 => {
-            emit_error(output, "股票模式参数不足");
-        }
-        5 => {
-            let entry = match parse_positive(s_args[1], "当前价") {
-                Ok(v) => v,
-                Err(e) => {
-                    emit_error(output, &e);
-                    return;
-                }
-            };
-            let target = match parse_positive(s_args[2], "止盈价") {
-                Ok(v) => v,
-                Err(e) => {
-                    emit_error(output, &e);
-                    return;
-                }
-            };
-            let stop = match parse_positive(s_args[3], "止损价") {
-                Ok(v) => v,
-                Err(e) => {
-                    emit_error(output, &e);
-                    return;
-                }
-            };
-            let win_rate = match parse_percent(s_args[4], "胜率") {
-                Ok(v) => v,
-                Err(e) => {
-                    emit_error(output, &e);
-                    return;
-                }
-            };
-
-            if target <= entry || stop >= entry {
-                emit_error(
-                    output,
-                    "参数错误: 止盈价必须大于当前价，止损价必须小于当前价",
-                );
-            } else {
-                execute_mode(
-                    ModeRequest::Stock {
-                        entry_price: entry,
-                        target_price: target,
-                        stop_loss: stop,
-                        win_rate,
-                        capital: None,
-                    },
-                    output,
-                );
-            }
-        }
-        6 => {
-            let entry = match parse_positive(s_args[1], "当前价") {
-                Ok(v) => v,
-                Err(e) => {
-                    emit_error(output, &e);
-                    return;
-                }
-            };
-            let target = match parse_positive(s_args[2], "止盈价") {
-                Ok(v) => v,
-                Err(e) => {
-                    emit_error(output, &e);
-                    return;
-                }
-            };
-            let stop = match parse_positive(s_args[3], "止损价") {
-                Ok(v) => v,
-                Err(e) => {
-                    emit_error(output, &e);
-                    return;
-                }
-            };
-            let win_rate = match parse_percent(s_args[4], "胜率") {
-                Ok(v) => v,
-                Err(e) => {
-                    emit_error(output, &e);
-                    return;
-                }
-            };
-            let capital = match parse_positive(s_args[5], "本金") {
-                Ok(v) => v,
-                Err(e) => {
-                    emit_error(output, &e);
-                    return;
-                }
-            };
-
-            if target <= entry || stop >= entry {
-                emit_error(
-                    output,
-                    "参数错误: 止盈价必须大于当前价，止损价必须小于当前价",
-                );
-            } else {
-                execute_mode(
-                    ModeRequest::Stock {
-                        entry_price: entry,
-                        target_price: target,
-                        stop_loss: stop,
-                        win_rate,
-                        capital: Some(capital),
-                    },
-                    output,
-                );
-            }
-        }
-        _ => {
-            emit_error(output, "股票模式参数错误");
-            if !output.is_json() {
-                println!();
-                println!("用法: bo -s <当前价> <止盈价> <止损价> <胜率> [本金]");
-                println!("示例: bo -s 100 120 90 60    # 当前价100，止盈120，止损90，胜率60%");
-            }
-        }
-    }
-}
-
-fn handle_arbitrage(args: Vec<String>, output: OutputFormat) {
-    let a_args: Vec<&String> = args.iter().filter(|&a| a != "-a").collect();
-
-    match a_args.len() {
-        1 => {
-            emit_error(output, "套利模式参数不足");
-        }
-        3 => {
-            let odds1 = match parse_odds(a_args[1], "赔率1") {
-                Ok(v) => v,
-                Err(e) => {
-                    emit_error(output, &e);
-                    return;
-                }
-            };
-            let odds2 = match parse_odds(a_args[2], "赔率2") {
-                Ok(v) => v,
-                Err(e) => {
-                    emit_error(output, &e);
-                    return;
-                }
-            };
-            execute_mode(
-                ModeRequest::Arbitrage {
-                    odds1,
-                    odds2,
-                    capital: None,
-                },
-                output,
-            );
-        }
-        4 => {
-            let odds1 = match parse_odds(a_args[1], "赔率1") {
-                Ok(v) => v,
-                Err(e) => {
-                    emit_error(output, &e);
-                    return;
-                }
-            };
-            let odds2 = match parse_odds(a_args[2], "赔率2") {
-                Ok(v) => v,
-                Err(e) => {
-                    emit_error(output, &e);
-                    return;
-                }
-            };
-            let capital = match parse_positive(a_args[3], "本金") {
-                Ok(v) => v,
-                Err(e) => {
-                    emit_error(output, &e);
-                    return;
-                }
-            };
-            execute_mode(
-                ModeRequest::Arbitrage {
-                    odds1,
-                    odds2,
-                    capital: Some(capital),
-                },
-                output,
-            );
-        }
-        _ => {
-            emit_error(output, "套利模式参数错误");
-            if !output.is_json() {
-                println!();
-                println!("用法: bo -a <赔率1> <赔率2> [本金]");
-                println!("示例: bo -a 1.9 2.1    # 方案1赔率1.9，方案2赔率2.1");
-            }
-        }
-    }
-}
-
-fn handle_multi_arbitrage(args: Vec<String>, output: OutputFormat) {
-    let ma_args: Vec<&String> = args.iter().filter(|&a| a != "-A").collect();
-
-    if ma_args.len() < 2 {
-        emit_error(output, "多标的套利模式参数不足");
-        if !output.is_json() {
-            println!();
-            println!("用法: bo -A <标的数量> <赔率1> ... <赔率N> [本金]");
-            println!("示例: bo -A 3 2.0 3.5 4.0    # 3个标的，赔率分别为2.0, 3.5, 4.0");
-        }
-        return;
+    if present_flags.len() > 1 {
+        return emit_error(output, "一次只能指定一种计算模式", false);
     }
 
-    let count: usize = match ma_args[1].parse() {
-        Ok(n) if n >= 2 => n,
-        Ok(_) => {
-            emit_error(output, "标的数量必须至少为 2");
-            return;
-        }
-        Err(_) => {
-            emit_error(output, "标的数量必须是数字");
-            return;
-        }
+    let parsed = match present_flags.first().copied() {
+        Some("-K") => parse_portfolio_correlated(&args_without_flag(&args, "-K")),
+        Some("-k") => parse_portfolio(&args_without_flag(&args, "-k")),
+        Some("-n") => parse_nash(&args_without_flag(&args, "-n")),
+        Some("-A") => parse_multi_arbitrage(&args_without_flag(&args, "-A")),
+        Some("-a") => parse_arbitrage(&args_without_flag(&args, "-a")),
+        Some("-s") => parse_stock(&args_without_flag(&args, "-s")),
+        Some("-p") => parse_polymarket(&args_without_flag(&args, "-p")),
+        Some(_) => unreachable!("mode flag list is exhaustive"),
+        None => parse_standard(&user_args(&args)),
     };
 
-    let expected_min = count + 2;
-    let has_capital = ma_args.len() == expected_min + 1;
-
-    if ma_args.len() != expected_min && !has_capital {
-        emit_error(
-            output,
-            &format!(
-                "参数数量不匹配，期望 {} 个赔率值，实际得到 {}",
-                count,
-                ma_args.len() - 2
-            ),
-        );
-        if !output.is_json() {
-            println!();
-            println!("用法: bo -A <标的数量> <赔率1> ... <赔率N> [本金]");
-            println!("示例: bo -A 3 2.0 3.5 4.0    # 3个标的，赔率分别为2.0, 3.5, 4.0");
+    match parsed {
+        Ok(mode) => finish(mode, output),
+        Err(e) => {
+            let show_usage = !output.is_json()
+                && present_flags.is_empty()
+                && matches!(e.as_str(), "参数不足" | "参数错误");
+            emit_error(output, &e, show_usage)
         }
-        return;
+    }
+}
+
+fn parse_standard(args: &[&str]) -> Result<ModeRequest, String> {
+    match args.len() {
+        2 | 3 => {
+            let odds = parse_odds(args[0], "赔率")?;
+            let win_rate = parse_percent(args[1], "胜率")?;
+            let capital = if args.len() == 3 {
+                Some(parse_positive(args[2], "本金")?)
+            } else {
+                None
+            };
+            Ok(ModeRequest::Standard {
+                odds,
+                win_rate,
+                capital,
+            })
+        }
+        0 | 1 => Err("参数不足".to_string()),
+        _ => Err("参数错误".to_string()),
+    }
+}
+
+fn parse_polymarket(args: &[&str]) -> Result<ModeRequest, String> {
+    match args.len() {
+        2 | 3 => {
+            let market_price = parse_market_price(args[0])?;
+            let your_probability = parse_percent(args[1], "你的概率")?;
+            let capital = if args.len() == 3 {
+                Some(parse_positive(args[2], "本金")?)
+            } else {
+                None
+            };
+            Ok(ModeRequest::Polymarket {
+                market_price,
+                your_probability,
+                capital,
+            })
+        }
+        0 | 1 => Err("Polymarket 模式参数不足".to_string()),
+        _ => Err("Polymarket 模式参数错误".to_string()),
+    }
+}
+
+fn parse_stock(args: &[&str]) -> Result<ModeRequest, String> {
+    match args.len() {
+        4 | 5 => {
+            let entry_price = parse_positive(args[0], "当前价")?;
+            let target_price = parse_positive(args[1], "止盈价")?;
+            let stop_loss = parse_positive(args[2], "止损价")?;
+            let win_rate = parse_percent(args[3], "胜率")?;
+            let capital = if args.len() == 5 {
+                Some(parse_positive(args[4], "本金")?)
+            } else {
+                None
+            };
+
+            if target_price <= entry_price || stop_loss >= entry_price {
+                return Err("参数错误: 止盈价必须大于当前价，止损价必须小于当前价".to_string());
+            }
+
+            Ok(ModeRequest::Stock {
+                entry_price,
+                target_price,
+                stop_loss,
+                win_rate,
+                capital,
+            })
+        }
+        0..=3 => Err("股票模式参数不足".to_string()),
+        _ => Err("股票模式参数错误".to_string()),
+    }
+}
+
+fn parse_arbitrage(args: &[&str]) -> Result<ModeRequest, String> {
+    match args.len() {
+        2 | 3 => {
+            let odds1 = parse_odds(args[0], "赔率1")?;
+            let odds2 = parse_odds(args[1], "赔率2")?;
+            let capital = if args.len() == 3 {
+                Some(parse_positive(args[2], "本金")?)
+            } else {
+                None
+            };
+            Ok(ModeRequest::Arbitrage {
+                odds1,
+                odds2,
+                capital,
+            })
+        }
+        0 | 1 => Err("套利模式参数不足".to_string()),
+        _ => Err("套利模式参数错误".to_string()),
+    }
+}
+
+fn parse_multi_arbitrage(args: &[&str]) -> Result<ModeRequest, String> {
+    if args.is_empty() {
+        return Err("多标的套利模式参数不足".to_string());
     }
 
-    let mut odds = Vec::new();
+    let count: usize = args[0]
+        .parse()
+        .map_err(|_| "标的数量必须是数字".to_string())?;
+    if count < 2 {
+        return Err("标的数量必须至少为 2".to_string());
+    }
+
+    let expected = 1 + count;
+    let has_capital = args.len() == expected + 1;
+    if args.len() != expected && !has_capital {
+        return Err(format!(
+            "参数数量不匹配，期望 {} 个赔率值，实际得到 {}",
+            count,
+            args.len().saturating_sub(1)
+        ));
+    }
+
+    let mut odds = Vec::with_capacity(count);
     for i in 0..count {
-        let o: f64 = match ma_args[2 + i].parse() {
-            Ok(n) if n > 1.0 => n,
-            Ok(_) => {
-                emit_error(output, "赔率必须大于 1.0");
-                return;
-            }
-            Err(_) => {
-                emit_error(output, &format!("赔率{}必须是数字", i + 1));
-                return;
-            }
-        };
-        odds.push(o);
+        odds.push(parse_odds(args[1 + i], &format!("赔率{}", i + 1))?);
     }
 
     let capital = if has_capital {
-        let cap: f64 = match ma_args[ma_args.len() - 1].parse() {
-            Ok(n) if n > 0.0 => n,
-            _ => {
-                emit_error(output, "本金必须为正数");
-                return;
-            }
-        };
-        Some(cap)
+        Some(parse_positive(args[args.len() - 1], "本金")?)
     } else {
         None
     };
 
-    execute_mode(ModeRequest::MultiArbitrage { odds, capital }, output);
+    Ok(ModeRequest::MultiArbitrage { odds, capital })
 }
 
-fn handle_nash(args: Vec<String>, output: OutputFormat) {
-    let n_args: Vec<&String> = args.iter().filter(|&a| a != "-n").collect();
-
-    match n_args.len() {
-        1 => {
-            emit_error(output, "纳什模式参数不足");
-        }
-        9 => {
-            let labels = ["a11", "a12", "a21", "a22", "b11", "b12", "b21", "b22"];
-            let mut values = [0.0_f64; 8];
-
-            for i in 0..8 {
-                let value = match parse_f64(n_args[i + 1], labels[i]) {
-                    Ok(v) => v,
-                    Err(e) => {
-                        emit_error(output, &e);
-                        return;
-                    }
-                };
-                values[i] = value;
-            }
-
-            execute_mode(
-                ModeRequest::Nash {
-                    row_payoffs: [[values[0], values[1]], [values[2], values[3]]],
-                    col_payoffs: [[values[4], values[5]], [values[6], values[7]]],
-                },
-                output,
-            );
-        }
-        _ => {
-            emit_error(output, "纳什模式参数错误");
-            if !output.is_json() {
-                println!();
-                println!("用法: bo -n <a11> <a12> <a21> <a22> <b11> <b12> <b21> <b22>");
-                println!("示例: bo -n 3 0 5 1 3 5 0 1    # 囚徒困境收益矩阵");
-            }
-        }
+fn parse_nash(args: &[&str]) -> Result<ModeRequest, String> {
+    if args.len() != 8 {
+        return Err(if args.is_empty() {
+            "纳什模式参数不足".to_string()
+        } else {
+            "纳什模式参数错误".to_string()
+        });
     }
+
+    let labels = ["a11", "a12", "a21", "a22", "b11", "b12", "b21", "b22"];
+    let mut values = [0.0_f64; 8];
+    for (i, label) in labels.iter().enumerate() {
+        values[i] = parse_f64(args[i], label)?;
+    }
+
+    Ok(ModeRequest::Nash {
+        row_payoffs: [[values[0], values[1]], [values[2], values[3]]],
+        col_payoffs: [[values[4], values[5]], [values[6], values[7]]],
+    })
 }
 
-fn handle_portfolio_correlated(args: Vec<String>, output: OutputFormat) {
-    let c_args: Vec<&String> = args.iter().filter(|&a| a != "-K").collect();
-
-    if c_args.len() < 3 {
-        emit_error(output, "相关情景组合凯利模式参数不足");
-        if !output.is_json() {
-            println!();
-            println!(
-                "用法: bo -K <标的数量> <情景数量> <p1> <r11> ... <r1N> ... <pM> <rM1> ... <rMN> [本金]"
-            );
-            println!("说明: 概率和收益率都按百分数输入，例如 50 代表 50%");
-        }
-        return;
+fn parse_portfolio_correlated(args: &[&str]) -> Result<ModeRequest, String> {
+    if args.len() < 2 {
+        return Err("相关情景组合凯利模式参数不足".to_string());
     }
 
-    let leg_count: usize = match c_args[1].parse() {
-        Ok(n) if (1..=12).contains(&n) => n,
-        Ok(_) => {
-            emit_error(output, "标的数量必须在 1-12 之间");
-            return;
-        }
-        Err(_) => {
-            emit_error(output, "标的数量必须是数字");
-            return;
-        }
-    };
+    let leg_count: usize = args[0]
+        .parse()
+        .map_err(|_| "标的数量必须是数字".to_string())?;
+    if !(1..=12).contains(&leg_count) {
+        return Err("标的数量必须在 1-12 之间".to_string());
+    }
 
-    let scenario_count: usize = match c_args[2].parse() {
-        Ok(n) if (2..=128).contains(&n) => n,
-        Ok(_) => {
-            emit_error(output, "情景数量必须在 2-128 之间");
-            return;
-        }
-        Err(_) => {
-            emit_error(output, "情景数量必须是数字");
-            return;
-        }
-    };
+    let scenario_count: usize = args[1]
+        .parse()
+        .map_err(|_| "情景数量必须是数字".to_string())?;
+    if !(2..=128).contains(&scenario_count) {
+        return Err("情景数量必须在 2-128 之间".to_string());
+    }
 
-    let expected_min = 3 + scenario_count * (1 + leg_count);
-    let has_capital = c_args.len() == expected_min + 1;
-    if c_args.len() != expected_min && !has_capital {
-        emit_error(
-            output,
-            &format!(
-                "参数数量不匹配，期望 {} 个情景，每个情景包含 1 个概率 + {} 个收益率",
-                scenario_count, leg_count
-            ),
-        );
-        if !output.is_json() {
-            println!();
-            println!(
-                "用法: bo -K <标的数量> <情景数量> <p1> <r11> ... <r1N> ... <pM> <rM1> ... <rMN> [本金]"
-            );
-            println!("示例: bo -K 2 2 50 20 -10 50 -10 20 10000");
-        }
-        return;
+    let expected = 2 + scenario_count * (1 + leg_count);
+    let has_capital = args.len() == expected + 1;
+    if args.len() != expected && !has_capital {
+        return Err(format!(
+            "参数数量不匹配，期望 {} 个情景，每个情景包含 1 个概率 + {} 个收益率",
+            scenario_count, leg_count
+        ));
     }
 
     let mut scenarios = Vec::with_capacity(scenario_count);
-    let mut idx = 3;
+    let mut idx = 2;
     for s in 0..scenario_count {
-        let prob = match parse_percent(c_args[idx], &format!("情景{}概率", s + 1)) {
-            Ok(v) => v,
-            Err(e) => {
-                emit_error(output, &e);
-                return;
-            }
-        };
+        let probability = parse_percent(args[idx], &format!("情景{}概率", s + 1))?;
         idx += 1;
 
         let mut returns = Vec::with_capacity(leg_count);
         for i in 0..leg_count {
             let field = format!("情景{}收益{}", s + 1, i + 1);
-            let ret = match parse_return_percent(c_args[idx], &field) {
-                Ok(v) => v,
-                Err(e) => {
-                    emit_error(output, &e);
-                    return;
-                }
-            };
-            returns.push(ret);
+            returns.push(parse_return_percent(args[idx], &field)?);
             idx += 1;
         }
+
         scenarios.push(PortfolioScenario {
-            probability: prob,
+            probability,
             returns,
         });
     }
@@ -650,170 +331,96 @@ fn handle_portfolio_correlated(args: Vec<String>, output: OutputFormat) {
     let prob_sum: f64 = scenarios.iter().map(|s| s.probability).sum();
     let tolerance = probability_sum_tolerance(scenario_count);
     if (prob_sum - 1.0).abs() > tolerance {
-        emit_error(
-            output,
-            &format!(
-                "所有情景概率之和必须约等于 100%（容差 ±{:.4}%），当前为 {:.4}%",
-                tolerance * 100.0,
-                prob_sum * 100.0
-            ),
-        );
-        return;
+        return Err(format!(
+            "所有情景概率之和必须约等于 100%（容差 ±{:.4}%），当前为 {:.4}%",
+            tolerance * 100.0,
+            prob_sum * 100.0
+        ));
     }
 
     let capital = if has_capital {
-        match parse_positive(c_args[c_args.len() - 1], "本金") {
-            Ok(v) => Some(v),
-            Err(e) => {
-                emit_error(output, &e);
-                return;
-            }
-        }
+        Some(parse_positive(args[args.len() - 1], "本金")?)
     } else {
         None
     };
 
-    execute_mode(
-        ModeRequest::PortfolioCorrelated {
-            leg_count,
-            scenarios,
-            capital,
-        },
-        output,
-    );
+    Ok(ModeRequest::PortfolioCorrelated {
+        leg_count,
+        scenarios,
+        capital,
+    })
 }
 
-fn handle_portfolio(args: Vec<String>, output: OutputFormat) {
-    let p_args: Vec<&String> = args.iter().filter(|&a| a != "-k").collect();
-
-    if p_args.len() < 2 {
-        emit_error(output, "组合凯利模式参数不足");
-        if !output.is_json() {
-            println!();
-            println!("用法: bo -k <标的数量> <赔率1> <胜率1> ... <赔率N> <胜率N> [本金]");
-            println!("示例: bo -k 2 2.0 60 2.5 55 10000");
-        }
-        return;
+fn parse_portfolio(args: &[&str]) -> Result<ModeRequest, String> {
+    if args.is_empty() {
+        return Err("组合凯利模式参数不足".to_string());
     }
 
-    // 新格式: `-k <descriptor1> <descriptor2> ... [本金]`
-    // descriptor 支持: std/pm/stock/arb/marb
-    if p_args[1].parse::<usize>().is_err() {
-        let mut end = p_args.len();
-        let mut capital = None;
-
-        if end > 2 && !p_args[end - 1].contains(':') {
-            match parse_positive(p_args[end - 1], "本金") {
-                Ok(v) => {
-                    capital = Some(v);
-                    end -= 1;
-                }
-                Err(e) => {
-                    emit_error(output, &format!("组合标的描述错误或本金错误: {}", e));
-                    return;
-                }
-            }
-        }
-
-        let mut legs = Vec::new();
-        for token in &p_args[1..end] {
-            if !token.contains(':') {
-                emit_error(output, "组合标的格式错误，示例: std:2.0:60");
-                return;
-            }
-            let leg = match parse_portfolio_leg_descriptor(token) {
-                Ok(v) => v,
-                Err(e) => {
-                    emit_error(output, &e);
-                    return;
-                }
-            };
-            legs.push(leg);
-        }
-
-        if legs.len() < 2 {
-            emit_error(output, "组合凯利至少需要 2 个标的");
-            return;
-        }
-        if legs.len() > 12 {
-            emit_error(output, "组合凯利最多支持 12 个标的");
-            return;
-        }
-
-        execute_mode(ModeRequest::Portfolio { legs, capital }, output);
-        return;
+    if args[0].parse::<usize>().is_err() {
+        return parse_descriptor_portfolio(args);
     }
 
-    // 兼容旧格式: `-k <数量> <赔率1> <胜率1> ... <赔率N> <胜率N> [本金]`
-    let count: usize = match p_args[1].parse() {
-        Ok(n) if (2..=12).contains(&n) => n,
-        Ok(_) => {
-            emit_error(output, "标的数量必须在 2-12 之间");
-            return;
-        }
-        Err(_) => {
-            emit_error(output, "标的数量必须是数字");
-            return;
-        }
-    };
+    let count: usize = args[0]
+        .parse()
+        .map_err(|_| "标的数量必须是数字".to_string())?;
+    if !(2..=12).contains(&count) {
+        return Err("标的数量必须在 2-12 之间".to_string());
+    }
 
-    let expected_min = 2 + count * 2;
-    let has_capital = p_args.len() == expected_min + 1;
-
-    if p_args.len() != expected_min && !has_capital {
-        emit_error(
-            output,
-            &format!(
-                "参数数量不匹配，期望 {} 对(赔率,胜率)参数，实际得到 {} 对",
-                count,
-                (p_args.len().saturating_sub(2)) / 2
-            ),
-        );
-        if !output.is_json() {
-            println!();
-            println!("用法1: bo -k <标的数量> <赔率1> <胜率1> ... <赔率N> <胜率N> [本金]");
-            println!("用法2: bo -k <descriptor1> <descriptor2> ... [本金]");
-            println!("示例: bo -k std:2.0:60 pm:60:75 stock:100:120:90:60 10000");
-        }
-        return;
+    let expected = 1 + count * 2;
+    let has_capital = args.len() == expected + 1;
+    if args.len() != expected && !has_capital {
+        return Err(format!(
+            "参数数量不匹配，期望 {} 对(赔率,胜率)参数，实际得到 {} 对",
+            count,
+            args.len().saturating_sub(1) / 2
+        ));
     }
 
     let mut legs = Vec::with_capacity(count);
     for i in 0..count {
-        let odds_field = format!("赔率{}", i + 1);
-        let win_rate_field = format!("胜率{}", i + 1);
-
-        let odds = match parse_odds(p_args[2 + i * 2], &odds_field) {
-            Ok(v) => v,
-            Err(e) => {
-                emit_error(output, &e);
-                return;
-            }
-        };
-        let win_rate = match parse_percent(p_args[3 + i * 2], &win_rate_field) {
-            Ok(v) => v,
-            Err(e) => {
-                emit_error(output, &e);
-                return;
-            }
-        };
-
+        let odds = parse_odds(args[1 + i * 2], &format!("赔率{}", i + 1))?;
+        let win_rate = parse_percent(args[2 + i * 2], &format!("胜率{}", i + 1))?;
         legs.push(build_standard_leg(odds, win_rate));
     }
 
     let capital = if has_capital {
-        match parse_positive(p_args[p_args.len() - 1], "本金") {
-            Ok(v) => Some(v),
-            Err(e) => {
-                emit_error(output, &e);
-                return;
-            }
-        }
+        Some(parse_positive(args[args.len() - 1], "本金")?)
     } else {
         None
     };
 
-    execute_mode(ModeRequest::Portfolio { legs, capital }, output);
+    Ok(ModeRequest::Portfolio { legs, capital })
+}
+
+fn parse_descriptor_portfolio(args: &[&str]) -> Result<ModeRequest, String> {
+    let mut end = args.len();
+    let mut capital = None;
+
+    if end > 1 && !args[end - 1].contains(':') {
+        capital = Some(
+            parse_positive(args[end - 1], "本金")
+                .map_err(|e| format!("组合标的描述错误或本金错误: {}", e))?,
+        );
+        end -= 1;
+    }
+
+    let mut legs = Vec::new();
+    for token in &args[..end] {
+        if !token.contains(':') {
+            return Err("组合标的格式错误，示例: std:2.0:60".to_string());
+        }
+        legs.push(parse_portfolio_leg_descriptor(token)?);
+    }
+
+    if legs.len() < 2 {
+        return Err("组合凯利至少需要 2 个标的".to_string());
+    }
+    if legs.len() > 12 {
+        return Err("组合凯利最多支持 12 个标的".to_string());
+    }
+
+    Ok(ModeRequest::Portfolio { legs, capital })
 }
 
 /// 检查是否为交互式模式调用
@@ -822,14 +429,9 @@ pub fn is_interactive_call(args: &[String]) -> bool {
         return true;
     }
 
-    let flags = ["-p", "-s", "-a", "-A", "-n", "-k", "-K"];
-    for flag in &flags {
-        if args.iter().any(|a| a == *flag) && args.len() == 2 {
-            return true;
-        }
-    }
-
-    false
+    MODE_FLAGS
+        .iter()
+        .any(|flag| args.iter().any(|arg| arg == *flag) && args.len() == 2)
 }
 
 #[cfg(test)]
