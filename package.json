@@ -6,12 +6,12 @@
   "author": "inoader",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/inoader/bo.git"
+    "url": "https://github.com/inoader/bo-PositionCalculator"
   },
   "bugs": {
-    "url": "https://github.com/inoader/bo/issues"
+    "url": "https://github.com/inoader/bo-PositionCalculator/issues"
   },
-  "homepage": "https://github.com/inoader/bo#readme",
+  "homepage": "https://github.com/inoader/bo-PositionCalculator#readme",
   "bin": {
     "bo": "npm/bo.js"
   },

@@ -7,7 +7,7 @@
 支持标准投注、Polymarket 预测市场、股票交易、套利/抽水、纳什均衡、组合凯利（独立）与相关情景组合凯利（非独立）计算。
 
 [![npm](https://img.shields.io/npm/v/%40inoader%2Fbo)](https://www.npmjs.com/package/@inoader/bo)
-[![Publish](https://img.shields.io/github/actions/workflow/status/inoader/bo/release.yml?branch=main)](https://github.com/inoader/bo/actions)
+[![Publish](https://img.shields.io/github/actions/workflow/status/inoader/bo-PositionCalculator/release.yml?branch=main)](https://github.com/inoader/bo-PositionCalculator/actions)
 
 </div>
 
@@ -45,7 +45,7 @@ bo 2.0 60
 ### 方式二：从源码编译
 
 ```bash
-git clone https://github.com/inoader/bo.git
+git clone https://github.com/inoader/bo-PositionCalculator.git
 cd bo
 cargo build --release
 ```
