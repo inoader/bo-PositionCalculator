@@ -21,6 +21,14 @@ pub struct KellyGrowthRates {
     pub quarter_kelly: f64,
 }
 
+/// 资产等级计算结果
+#[derive(Debug, Clone)]
+pub struct AssetLevelResult {
+    pub amount: f64,
+    pub a_level: f64,
+    pub l_level: f64,
+}
+
 /// 套利机会计算结果
 #[derive(Debug, Clone)]
 pub struct ArbitrageResult {

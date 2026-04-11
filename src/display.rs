@@ -1,8 +1,8 @@
 //! 显示输出相关功能
 
 use crate::types::{
-    ArbitrageResult, KellyGrowthRates, KellyResult, MultiArbitrageResult, NashResult,
-    PortfolioKellyResult, PortfolioLeg, PortfolioScenario, StockInfo,
+    ArbitrageResult, AssetLevelResult, KellyGrowthRates, KellyResult, MultiArbitrageResult,
+    NashResult, PortfolioKellyResult, PortfolioLeg, PortfolioScenario, StockInfo,
 };
 
 // EV 以百分比显示到小数点后两位，这里使用对应阈值避免出现“显示 0.00% 但判定正/负期望”。
@@ -183,6 +183,14 @@ pub fn print_title_nash() {
     separator();
     println!("                      纳什均衡计算器");
     println!("                    2x2 Normal Form Game");
+    separator();
+    println!();
+}
+
+/// 打印资产等级标题
+pub fn print_title_asset_level() {
+    separator();
+    println!("                      资产等级计算器");
     separator();
     println!();
 }
@@ -392,6 +400,12 @@ pub fn print_result_stock(
     }
 
     separator();
+}
+
+/// 打印资产等级结果
+pub fn print_result_asset_level(result: &AssetLevelResult) {
+    println!("A{:.1}", result.a_level);
+    println!("L{:.4}", result.l_level);
 }
 
 /// 打印套利结果
@@ -859,6 +873,18 @@ pub fn print_result_stock_json(
     );
 }
 
+/// 打印资产等级 JSON 结果
+pub fn print_result_asset_level_json(result: &AssetLevelResult) {
+    println!(
+        r#"{{"ok":true,"mode":"asset_level","inputs":{{"amount":{}}},"result":{{"a_level":{},"l_level":{},"a_label":"A{:.1}","l_label":"L{:.4}"}}}}"#,
+        json_number(result.amount),
+        json_number(result.a_level),
+        json_number(result.l_level),
+        result.a_level,
+        result.l_level
+    );
+}
+
 /// 打印双标套利 JSON 结果
 pub fn print_result_arbitrage_json(
     odds1: f64,
@@ -1087,6 +1113,8 @@ pub fn print_usage() {
     println!("  bo -v | -version             # 显示版本");
     println!("  bo                           # 交互式模式");
     println!("  bo --json ...                # JSON 输出（仅命令行参数模式）");
+    println!("  bo -L <资金>                  # 资产等级：A系列 + L系列");
+    println!("  bo -L                         # 资产等级交互式");
     println!("  bo <赔率> <胜率>              # 命令行模式");
     println!("  bo <赔率> <胜率> <本金>        # 指定本金");
     println!();
@@ -1119,6 +1147,7 @@ pub fn print_usage() {
     println!("  bo 2.0 60                    # 赔率2.0，胜率60%");
     println!("  bo --json 2.0 60             # JSON 输出");
     println!("  bo 2.0 60 10000              # 本金10000");
+    println!("  bo -L 50000000               # 输出 A8.5 / L17.7275");
     println!();
     println!("  bo -p 60 75                  # 市场价格60c，你认为75%");
     println!("  bo -p 60 75 1000             # 本金1000");

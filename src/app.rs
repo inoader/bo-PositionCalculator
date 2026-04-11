@@ -1,13 +1,14 @@
 //! 统一执行入口：请求 -> 计算 -> 输出
 
 use crate::arbitrage::{calculate_arbitrage, calculate_multi_arbitrage};
+use crate::asset_level::calculate_asset_level;
 use crate::display::{
-    print_result, print_result_arbitrage, print_result_arbitrage_json, print_result_json,
-    print_result_multi_arbitrage, print_result_multi_arbitrage_json, print_result_nash,
-    print_result_nash_json, print_result_polymarket, print_result_polymarket_json,
-    print_result_portfolio, print_result_portfolio_correlated,
-    print_result_portfolio_correlated_json, print_result_portfolio_json, print_result_stock,
-    print_result_stock_json,
+    print_result, print_result_arbitrage, print_result_arbitrage_json, print_result_asset_level,
+    print_result_asset_level_json, print_result_json, print_result_multi_arbitrage,
+    print_result_multi_arbitrage_json, print_result_nash, print_result_nash_json,
+    print_result_polymarket, print_result_polymarket_json, print_result_portfolio,
+    print_result_portfolio_correlated, print_result_portfolio_correlated_json,
+    print_result_portfolio_json, print_result_stock, print_result_stock_json,
 };
 use crate::kelly::{build_stock_info, kelly_criterion, kelly_polymarket, kelly_stock};
 use crate::nash::calculate_nash_2x2;
@@ -27,6 +28,9 @@ impl OutputFormat {
 }
 
 pub enum ModeRequest {
+    AssetLevel {
+        amount: f64,
+    },
     Standard {
         odds: f64,
         win_rate: f64,
@@ -70,6 +74,14 @@ pub enum ModeRequest {
 
 pub fn execute_mode(mode: ModeRequest, output: OutputFormat) -> Result<(), String> {
     match mode {
+        ModeRequest::AssetLevel { amount } => {
+            let result = calculate_asset_level(amount);
+            if output.is_json() {
+                print_result_asset_level_json(&result);
+            } else {
+                print_result_asset_level(&result);
+            }
+        }
         ModeRequest::Standard {
             odds,
             win_rate,

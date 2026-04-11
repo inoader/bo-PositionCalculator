@@ -46,3 +46,24 @@ fn standard_json_includes_arithmetic_and_geometric_expectations() {
     assert!(stdout.contains(r#""full_kelly":0.0203396005"#));
     assert!(output.stderr.is_empty());
 }
+
+#[test]
+fn asset_level_outputs_a_and_l_lines() {
+    let output = bo().args(["-L", "50000000"]).output().unwrap();
+
+    assert!(output.status.success());
+    assert_eq!(String::from_utf8_lossy(&output.stdout), "A8.5\nL17.7275\n");
+    assert!(output.stderr.is_empty());
+}
+
+#[test]
+fn asset_level_json_includes_labels() {
+    let output = bo().args(["--json", "-L", "50000000"]).output().unwrap();
+
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains(r#""mode":"asset_level""#));
+    assert!(stdout.contains(r#""a_label":"A8.5""#));
+    assert!(stdout.contains(r#""l_label":"L17.7275""#));
+    assert!(output.stderr.is_empty());
+}

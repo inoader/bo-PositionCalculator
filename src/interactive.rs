@@ -4,8 +4,8 @@ use std::io::{self, Write};
 
 use crate::app::{ModeRequest, OutputFormat, execute_mode};
 use crate::display::{
-    print_title, print_title_arbitrage, print_title_nash, print_title_polymarket,
-    print_title_portfolio, print_title_stock, separator,
+    print_title, print_title_arbitrage, print_title_asset_level, print_title_nash,
+    print_title_polymarket, print_title_portfolio, print_title_stock, separator,
 };
 use crate::portfolio_input::parse_portfolio_leg_descriptor;
 use crate::validation::{parse_f64, parse_market_price, parse_odds, parse_percent, parse_positive};
@@ -31,6 +31,37 @@ fn parse_return_percent_input(input: &str, field_name: &str) -> Result<f64, Stri
 
 fn probability_sum_tolerance(scenario_count: usize) -> f64 {
     (scenario_count as f64) * 0.00005 + 1e-9
+}
+
+/// 资产等级交互式
+pub fn interactive_asset_level() {
+    print_title_asset_level();
+
+    loop {
+        println!("请输入资金金额 (输入 q 退出):");
+        print!("> ");
+        io::stdout().flush().unwrap();
+
+        let mut amount_input = String::new();
+        io::stdin().read_line(&mut amount_input).unwrap();
+        let trimmed = amount_input.trim();
+
+        if trimmed.to_lowercase() == "q" {
+            println!("再见！");
+            break;
+        }
+
+        let amount = match parse_positive(trimmed, "资金") {
+            Ok(n) => n,
+            Err(e) => {
+                println!("✗ {}\n", e);
+                continue;
+            }
+        };
+
+        execute_text(ModeRequest::AssetLevel { amount });
+        println!();
+    }
 }
 
 /// 标准交互式模式

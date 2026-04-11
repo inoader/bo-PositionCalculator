@@ -3,6 +3,7 @@ use std::process::ExitCode;
 
 mod app;
 mod arbitrage;
+mod asset_level;
 mod cli;
 mod display;
 mod interactive;
@@ -21,7 +22,9 @@ fn main() -> ExitCode {
         match args.len() {
             1 => interactive::interactive(),
             2 => {
-                if args[1] == "-p" {
+                if args[1] == "-L" {
+                    interactive::interactive_asset_level();
+                } else if args[1] == "-p" {
                     interactive::interactive_polymarket();
                 } else if args[1] == "-s" {
                     interactive::interactive_stock();

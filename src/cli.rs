@@ -8,7 +8,8 @@ use crate::portfolio_input::{build_standard_leg, parse_portfolio_leg_descriptor}
 use crate::types::PortfolioScenario;
 use crate::validation::{parse_f64, parse_market_price, parse_odds, parse_percent, parse_positive};
 
-const MODE_FLAGS: [&str; 7] = ["-p", "-s", "-a", "-A", "-n", "-k", "-K"];
+const MODE_FLAGS: [&str; 8] = ["-L", "-p", "-s", "-a", "-A", "-n", "-k", "-K"];
+const INTERACTIVE_MODE_FLAGS: [&str; 8] = ["-L", "-p", "-s", "-a", "-A", "-n", "-k", "-K"];
 
 fn is_help_flag(flag: &str) -> bool {
     matches!(flag, "-h" | "-help" | "--help")
@@ -109,6 +110,7 @@ pub fn handle_args(args: Vec<String>) -> ExitCode {
     }
 
     let parsed = match present_flags.first().copied() {
+        Some("-L") => parse_asset_level(&args_without_flag(&args, "-L")),
         Some("-K") => parse_portfolio_correlated(&args_without_flag(&args, "-K")),
         Some("-k") => parse_portfolio(&args_without_flag(&args, "-k")),
         Some("-n") => parse_nash(&args_without_flag(&args, "-n")),
@@ -128,6 +130,16 @@ pub fn handle_args(args: Vec<String>) -> ExitCode {
                 && matches!(e.as_str(), "参数不足" | "参数错误");
             emit_error(output, &e, show_usage)
         }
+    }
+}
+
+fn parse_asset_level(args: &[&str]) -> Result<ModeRequest, String> {
+    match args.len() {
+        1 => Ok(ModeRequest::AssetLevel {
+            amount: parse_positive(args[0], "资金")?,
+        }),
+        0 => Err("资产等级模式参数不足".to_string()),
+        _ => Err("资产等级模式参数错误".to_string()),
     }
 }
 
@@ -429,7 +441,7 @@ pub fn is_interactive_call(args: &[String]) -> bool {
         return true;
     }
 
-    MODE_FLAGS
+    INTERACTIVE_MODE_FLAGS
         .iter()
         .any(|flag| args.iter().any(|arg| arg == *flag) && args.len() == 2)
 }
