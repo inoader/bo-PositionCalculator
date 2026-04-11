@@ -383,3 +383,8 @@ s.t. f_i >= 0, Σ f_i <= 1
 ```
 
 这避免了把相关事件误当作独立事件所带来的仓位偏差。
+
+## Contributors
+
+- inoader
+- GPT / Codex
