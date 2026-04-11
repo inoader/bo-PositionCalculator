@@ -1,8 +1,8 @@
 //! 显示输出相关功能
 
 use crate::types::{
-    ArbitrageResult, KellyResult, MultiArbitrageResult, NashResult, PortfolioKellyResult,
-    PortfolioLeg, PortfolioScenario, StockInfo,
+    ArbitrageResult, KellyGrowthRates, KellyResult, MultiArbitrageResult, NashResult,
+    PortfolioKellyResult, PortfolioLeg, PortfolioScenario, StockInfo,
 };
 
 // EV 以百分比显示到小数点后两位，这里使用对应阈值避免出现“显示 0.00% 但判定正/负期望”。
@@ -39,6 +39,21 @@ fn print_ev_status(
     } else {
         println!("    ├─ 状态: {}", negative_label);
     }
+}
+
+fn print_geometric_expectations(growth: &KellyGrowthRates) {
+    println!(
+        "    ├─ 几何期望收益 (全凯利): {:.4}%",
+        growth.full_kelly * 100.0
+    );
+    println!(
+        "    ├─ 几何期望收益 (半凯利): {:.4}%",
+        growth.half_kelly * 100.0
+    );
+    println!(
+        "    ├─ 几何期望收益 (1/4凯利): {:.4}%",
+        growth.quarter_kelly * 100.0
+    );
 }
 
 fn json_escape(input: &str) -> String {
@@ -84,6 +99,15 @@ fn json_optional_number(value: Option<f64>) -> String {
 fn json_array(values: &[f64]) -> String {
     let parts: Vec<String> = values.iter().map(|&v| json_number(v)).collect();
     format!("[{}]", parts.join(","))
+}
+
+fn json_growth_rates(growth: &KellyGrowthRates) -> String {
+    format!(
+        r#"{{"full_kelly":{},"half_kelly":{},"quarter_kelly":{}}}"#,
+        json_number(growth.full_kelly),
+        json_number(growth.half_kelly),
+        json_number(growth.quarter_kelly)
+    )
 }
 
 fn json_matrix_2x2(matrix: [[f64; 2]; 2]) -> String {
@@ -165,7 +189,7 @@ pub fn print_title_nash() {
 
 /// 打印标准凯利结果
 pub fn print_result(odds: f64, win_rate: f64, result: &KellyResult, capital: Option<f64>) {
-    let fraction = effective_fraction(result.expected_value, result.optimal_fraction);
+    let fraction = effective_fraction(result.arithmetic_expected_return, result.optimal_fraction);
 
     println!();
     separator();
@@ -179,13 +203,14 @@ pub fn print_result(odds: f64, win_rate: f64, result: &KellyResult, capital: Opt
     println!();
     println!("  分析:");
     println!(
-        "    ├─ 期望收益 (EV): {:.2}%",
-        result.expected_value * 100.0
+        "    ├─ 算术期望收益: {:.2}%",
+        result.arithmetic_expected_return * 100.0
     );
+    print_geometric_expectations(&result.geometric_expected_return);
 
     print_ev_status(
         result.positive_ev,
-        result.expected_value,
+        result.arithmetic_expected_return,
         "✓ 正期望值 (值得下注)",
         "✗ 负期望值 (不建议下注)",
         "○ 中性期望值 (长期不赚不亏，建议不下注)",
@@ -222,7 +247,7 @@ pub fn print_result_polymarket(
     result: &KellyResult,
     capital: Option<f64>,
 ) {
-    let fraction = effective_fraction(result.expected_value, result.optimal_fraction);
+    let fraction = effective_fraction(result.arithmetic_expected_return, result.optimal_fraction);
 
     println!();
     separator();
@@ -242,13 +267,14 @@ pub fn print_result_polymarket(
     println!();
     println!("  分析:");
     println!(
-        "    ├─ 期望收益 (EV): {:.2}%",
-        result.expected_value * 100.0
+        "    ├─ 算术期望收益: {:.2}%",
+        result.arithmetic_expected_return * 100.0
     );
+    print_geometric_expectations(&result.geometric_expected_return);
 
     print_ev_status(
         result.positive_ev,
-        result.expected_value,
+        result.arithmetic_expected_return,
         "✓ 正期望值 (值得下注)",
         "✗ 负期望值 (不建议下注)",
         "○ 中性期望值 (长期不赚不亏，建议不下注)",
@@ -285,7 +311,8 @@ pub fn print_result_stock(
     result: &KellyResult,
     capital: Option<f64>,
 ) {
-    let risk_fraction = effective_fraction(result.expected_value, result.optimal_fraction);
+    let risk_fraction =
+        effective_fraction(result.arithmetic_expected_return, result.optimal_fraction);
     let stop_loss_pct = info.risk / info.entry_price;
     let position_fraction = if stop_loss_pct > 0.0 {
         risk_fraction / stop_loss_pct
@@ -313,13 +340,14 @@ pub fn print_result_stock(
     println!("  分析:");
     println!("    ├─ 净赔率 (b): {:.2}", info.ratio);
     println!(
-        "    ├─ 期望收益 (EV): {:.2}%",
-        result.expected_value * 100.0
+        "    ├─ 算术期望收益: {:.2}%",
+        result.arithmetic_expected_return * 100.0
     );
+    print_geometric_expectations(&result.geometric_expected_return);
 
     print_ev_status(
         result.positive_ev,
-        result.expected_value,
+        result.arithmetic_expected_return,
         "✓ 正期望值 (值得交易)",
         "✗ 负期望值 (不建议交易)",
         "○ 中性期望值 (长期不赚不亏，建议不交易)",
@@ -509,13 +537,14 @@ pub fn print_result_portfolio(
         result.worst_case_multiplier
     );
     println!(
-        "    ├─ 期望线性收益: {:.2}%",
+        "    ├─ 算术期望收益: {:.2}%",
         result.expected_arithmetic_return * 100.0
     );
     println!(
         "    ├─ 期望对数增长: {:.4}%",
         result.expected_log_growth * 100.0
     );
+    print_geometric_expectations(&result.geometric_expected_return);
     println!(
         "    └─ 收敛状态: {} (迭代 {} 次)",
         if result.converged {
@@ -595,13 +624,14 @@ pub fn print_result_portfolio_correlated(
         result.worst_case_multiplier
     );
     println!(
-        "    ├─ 期望线性收益: {:.2}%",
+        "    ├─ 算术期望收益: {:.2}%",
         result.expected_arithmetic_return * 100.0
     );
     println!(
         "    ├─ 期望对数增长: {:.4}%",
         result.expected_log_growth * 100.0
     );
+    print_geometric_expectations(&result.geometric_expected_return);
     println!(
         "    └─ 收敛状态: {} (迭代 {} 次)",
         if result.converged {
@@ -710,7 +740,8 @@ pub fn print_result_nash(
 
 /// 打印标准凯利 JSON 结果
 pub fn print_result_json(odds: f64, win_rate: f64, result: &KellyResult, capital: Option<f64>) {
-    let fraction = effective_fraction(result.expected_value, result.optimal_fraction);
+    let fraction = effective_fraction(result.arithmetic_expected_return, result.optimal_fraction);
+    let geometric_expected_return = json_growth_rates(&result.geometric_expected_return);
     let sizing = match capital {
         Some(cap) => format!(
             r#"{{"full_kelly":{},"half_kelly":{},"quarter_kelly":{}}}"#,
@@ -722,11 +753,13 @@ pub fn print_result_json(odds: f64, win_rate: f64, result: &KellyResult, capital
     };
 
     println!(
-        r#"{{"ok":true,"mode":"standard","inputs":{{"odds":{},"win_rate":{},"capital":{}}},"result":{{"expected_value":{},"positive_ev":{},"optimal_fraction":{},"recommended_fraction":{}}},"sizing":{}}}"#,
+        r#"{{"ok":true,"mode":"standard","inputs":{{"odds":{},"win_rate":{},"capital":{}}},"result":{{"arithmetic_expected_return":{},"expected_value":{},"geometric_expected_return":{},"positive_ev":{},"optimal_fraction":{},"recommended_fraction":{}}},"sizing":{}}}"#,
         json_number(odds),
         json_number(win_rate),
         json_optional_number(capital),
-        json_number(result.expected_value),
+        json_number(result.arithmetic_expected_return),
+        json_number(result.arithmetic_expected_return),
+        geometric_expected_return,
         result.positive_ev,
         json_number(result.optimal_fraction),
         json_number(fraction),
@@ -741,7 +774,8 @@ pub fn print_result_polymarket_json(
     result: &KellyResult,
     capital: Option<f64>,
 ) {
-    let fraction = effective_fraction(result.expected_value, result.optimal_fraction);
+    let fraction = effective_fraction(result.arithmetic_expected_return, result.optimal_fraction);
+    let geometric_expected_return = json_growth_rates(&result.geometric_expected_return);
     let sizing = match capital {
         Some(cap) => format!(
             r#"{{"full_kelly":{},"half_kelly":{},"quarter_kelly":{}}}"#,
@@ -753,12 +787,14 @@ pub fn print_result_polymarket_json(
     };
 
     println!(
-        r#"{{"ok":true,"mode":"polymarket","inputs":{{"market_price":{},"your_probability":{},"implied_odds":{},"capital":{}}},"result":{{"expected_value":{},"positive_ev":{},"optimal_fraction":{},"recommended_fraction":{}}},"sizing":{}}}"#,
+        r#"{{"ok":true,"mode":"polymarket","inputs":{{"market_price":{},"your_probability":{},"implied_odds":{},"capital":{}}},"result":{{"arithmetic_expected_return":{},"expected_value":{},"geometric_expected_return":{},"positive_ev":{},"optimal_fraction":{},"recommended_fraction":{}}},"sizing":{}}}"#,
         json_number(market_price),
         json_number(your_probability),
         json_number(1.0 / market_price),
         json_optional_number(capital),
-        json_number(result.expected_value),
+        json_number(result.arithmetic_expected_return),
+        json_number(result.arithmetic_expected_return),
+        geometric_expected_return,
         result.positive_ev,
         json_number(result.optimal_fraction),
         json_number(fraction),
@@ -773,7 +809,9 @@ pub fn print_result_stock_json(
     result: &KellyResult,
     capital: Option<f64>,
 ) {
-    let risk_fraction = effective_fraction(result.expected_value, result.optimal_fraction);
+    let risk_fraction =
+        effective_fraction(result.arithmetic_expected_return, result.optimal_fraction);
+    let geometric_expected_return = json_growth_rates(&result.geometric_expected_return);
     let stop_loss_pct = info.risk / info.entry_price;
     let position_fraction = if stop_loss_pct > 0.0 {
         risk_fraction / stop_loss_pct
@@ -800,7 +838,7 @@ pub fn print_result_stock_json(
     };
 
     println!(
-        r#"{{"ok":true,"mode":"stock","inputs":{{"entry_price":{},"target_price":{},"stop_loss":{},"win_rate":{},"capital":{}}},"analysis":{{"profit":{},"risk":{},"stop_loss_pct":{},"ratio":{}}},"result":{{"expected_value":{},"positive_ev":{},"risk_fraction":{},"position_fraction":{},"leverage":{}}},"sizing":{}}}"#,
+        r#"{{"ok":true,"mode":"stock","inputs":{{"entry_price":{},"target_price":{},"stop_loss":{},"win_rate":{},"capital":{}}},"analysis":{{"profit":{},"risk":{},"stop_loss_pct":{},"ratio":{}}},"result":{{"arithmetic_expected_return":{},"expected_value":{},"geometric_expected_return":{},"positive_ev":{},"risk_fraction":{},"position_fraction":{},"leverage":{}}},"sizing":{}}}"#,
         json_number(info.entry_price),
         json_number(info.target_price),
         json_number(info.stop_loss),
@@ -810,7 +848,9 @@ pub fn print_result_stock_json(
         json_number(info.risk),
         json_number(stop_loss_pct),
         json_number(info.ratio),
-        json_number(result.expected_value),
+        json_number(result.arithmetic_expected_return),
+        json_number(result.arithmetic_expected_return),
+        geometric_expected_return,
         result.positive_ev,
         json_number(risk_fraction),
         json_number(position_fraction),
@@ -937,6 +977,7 @@ pub fn print_result_portfolio_json(
     result: &PortfolioKellyResult,
     capital: Option<f64>,
 ) {
+    let geometric_expected_return = json_growth_rates(&result.geometric_expected_return);
     let legs_json = legs
         .iter()
         .map(|leg| {
@@ -970,13 +1011,14 @@ pub fn print_result_portfolio_json(
     };
 
     println!(
-        r#"{{"ok":true,"mode":"portfolio_kelly","inputs":{{"legs":[{}],"capital":{}}},"result":{{"allocations":{},"total_allocation":{},"expected_log_growth":{},"expected_arithmetic_return":{},"worst_case_multiplier":{},"converged":{},"iterations":{}}},"sizing":{}}}"#,
+        r#"{{"ok":true,"mode":"portfolio_kelly","inputs":{{"legs":[{}],"capital":{}}},"result":{{"allocations":{},"total_allocation":{},"expected_log_growth":{},"expected_arithmetic_return":{},"geometric_expected_return":{},"worst_case_multiplier":{},"converged":{},"iterations":{}}},"sizing":{}}}"#,
         legs_json,
         json_optional_number(capital),
         json_array(&result.allocations),
         json_number(result.total_allocation),
         json_number(result.expected_log_growth),
         json_number(result.expected_arithmetic_return),
+        geometric_expected_return,
         json_number(result.worst_case_multiplier),
         result.converged,
         result.iterations,
@@ -991,6 +1033,7 @@ pub fn print_result_portfolio_correlated_json(
     result: &PortfolioKellyResult,
     capital: Option<f64>,
 ) {
+    let geometric_expected_return = json_growth_rates(&result.geometric_expected_return);
     let scenarios_json = scenarios
         .iter()
         .map(|s| {
@@ -1021,7 +1064,7 @@ pub fn print_result_portfolio_correlated_json(
     };
 
     println!(
-        r#"{{"ok":true,"mode":"portfolio_kelly_correlated","inputs":{{"leg_count":{},"scenarios":[{}],"capital":{}}},"result":{{"allocations":{},"total_allocation":{},"expected_log_growth":{},"expected_arithmetic_return":{},"worst_case_multiplier":{},"converged":{},"iterations":{}}},"sizing":{}}}"#,
+        r#"{{"ok":true,"mode":"portfolio_kelly_correlated","inputs":{{"leg_count":{},"scenarios":[{}],"capital":{}}},"result":{{"allocations":{},"total_allocation":{},"expected_log_growth":{},"expected_arithmetic_return":{},"geometric_expected_return":{},"worst_case_multiplier":{},"converged":{},"iterations":{}}},"sizing":{}}}"#,
         leg_count,
         scenarios_json,
         json_optional_number(capital),
@@ -1029,6 +1072,7 @@ pub fn print_result_portfolio_correlated_json(
         json_number(result.total_allocation),
         json_number(result.expected_log_growth),
         json_number(result.expected_arithmetic_return),
+        geometric_expected_return,
         json_number(result.worst_case_multiplier),
         result.converged,
         result.iterations,

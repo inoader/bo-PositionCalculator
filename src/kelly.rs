@@ -2,7 +2,39 @@
 //! f* = (bp - q) / b
 //! 其中 b 为赔率-1，p 为胜率，q = 1-p
 
-use crate::types::{KellyResult, StockInfo};
+use crate::types::{KellyGrowthRates, KellyResult, StockInfo};
+
+fn geometric_expected_return(win_prob: f64, net_odds: f64, fraction: f64) -> f64 {
+    if fraction <= 0.0 {
+        return 0.0;
+    }
+
+    let loss_prob = 1.0 - win_prob;
+    let win_multiplier = 1.0 + fraction * net_odds;
+    let loss_multiplier = 1.0 - fraction;
+
+    if win_multiplier <= 0.0 || loss_multiplier < 0.0 {
+        return f64::NAN;
+    }
+
+    if loss_multiplier == 0.0 {
+        return if loss_prob > 0.0 {
+            -1.0
+        } else {
+            win_multiplier - 1.0
+        };
+    }
+
+    (win_prob * win_multiplier.ln() + loss_prob * loss_multiplier.ln()).exp() - 1.0
+}
+
+fn growth_rates(win_prob: f64, net_odds: f64, optimal_fraction: f64) -> KellyGrowthRates {
+    KellyGrowthRates {
+        full_kelly: geometric_expected_return(win_prob, net_odds, optimal_fraction),
+        half_kelly: geometric_expected_return(win_prob, net_odds, optimal_fraction * 0.5),
+        quarter_kelly: geometric_expected_return(win_prob, net_odds, optimal_fraction * 0.25),
+    }
+}
 
 /// 标准凯利公式计算
 pub fn kelly_criterion(odds: f64, win_rate: f64) -> KellyResult {
@@ -11,12 +43,13 @@ pub fn kelly_criterion(odds: f64, win_rate: f64) -> KellyResult {
     let q = 1.0 - p;
 
     let optimal_fraction = (b * p - q) / b;
-    let expected_value = p * b - q;
+    let arithmetic_expected_return = p * b - q;
 
     KellyResult {
         optimal_fraction,
-        positive_ev: expected_value > 0.0,
-        expected_value,
+        positive_ev: arithmetic_expected_return > 0.0,
+        arithmetic_expected_return,
+        geometric_expected_return: growth_rates(p, b, optimal_fraction),
     }
 }
 
@@ -29,12 +62,13 @@ pub fn kelly_polymarket(market_price: f64, your_probability: f64) -> KellyResult
     let q = 1.0 - p_your;
 
     let optimal_fraction = (b * p_your - q) / b;
-    let expected_value = p_your * b - q;
+    let arithmetic_expected_return = p_your * b - q;
 
     KellyResult {
         optimal_fraction,
-        positive_ev: expected_value > 0.0,
-        expected_value,
+        positive_ev: arithmetic_expected_return > 0.0,
+        arithmetic_expected_return,
+        geometric_expected_return: growth_rates(p_your, b, optimal_fraction),
     }
 }
 
@@ -53,12 +87,13 @@ pub fn kelly_stock(
     let q = 1.0 - p;
 
     let optimal_fraction = (b * p - q) / b;
-    let expected_value = p * b - q;
+    let arithmetic_expected_return = p * b - q;
 
     KellyResult {
         optimal_fraction,
-        positive_ev: expected_value > 0.0,
-        expected_value,
+        positive_ev: arithmetic_expected_return > 0.0,
+        arithmetic_expected_return,
+        geometric_expected_return: growth_rates(p, b, optimal_fraction),
     }
 }
 
@@ -95,7 +130,10 @@ mod tests {
     fn standard_kelly_calculation_is_correct() {
         let result = kelly_criterion(2.0, 0.6);
         assert_almost_eq(result.optimal_fraction, 0.2);
-        assert_almost_eq(result.expected_value, 0.2);
+        assert_almost_eq(result.arithmetic_expected_return, 0.2);
+        assert_almost_eq(result.geometric_expected_return.full_kelly, 0.0203396005);
+        assert_almost_eq(result.geometric_expected_return.half_kelly, 0.0151556004);
+        assert_almost_eq(result.geometric_expected_return.quarter_kelly, 0.0087952335);
         assert!(result.positive_ev);
     }
 
@@ -103,7 +141,7 @@ mod tests {
     fn polymarket_kelly_calculation_is_correct() {
         let result = kelly_polymarket(0.6, 0.75);
         assert_almost_eq(result.optimal_fraction, 0.375);
-        assert_almost_eq(result.expected_value, 0.25);
+        assert_almost_eq(result.arithmetic_expected_return, 0.25);
         assert!(result.positive_ev);
     }
 
@@ -111,7 +149,7 @@ mod tests {
     fn stock_kelly_calculation_is_correct() {
         let result = kelly_stock(100.0, 120.0, 90.0, 0.6);
         assert_almost_eq(result.optimal_fraction, 0.4);
-        assert_almost_eq(result.expected_value, 0.8);
+        assert_almost_eq(result.arithmetic_expected_return, 0.8);
         assert!(result.positive_ev);
     }
 
@@ -126,7 +164,8 @@ mod tests {
     #[test]
     fn negative_ev_sets_non_positive_flag() {
         let result = kelly_criterion(2.0, 0.4);
-        assert!(result.expected_value < 0.0);
+        assert!(result.arithmetic_expected_return < 0.0);
+        assert_almost_eq(result.geometric_expected_return.full_kelly, 0.0);
         assert!(!result.positive_ev);
         assert!(result.optimal_fraction <= 0.0);
     }

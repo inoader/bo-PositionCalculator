@@ -7,8 +7,18 @@ pub struct KellyResult {
     pub optimal_fraction: f64,
     /// 是否为正期望
     pub positive_ev: bool,
-    /// 期望收益
-    pub expected_value: f64,
+    /// 每下注 1 单位的算术期望收益
+    pub arithmetic_expected_return: f64,
+    /// 按全凯利、半凯利、1/4 凯利仓位下注后的几何期望收益
+    pub geometric_expected_return: KellyGrowthRates,
+}
+
+/// 不同凯利仓位倍率下的几何期望收益
+#[derive(Debug, Clone)]
+pub struct KellyGrowthRates {
+    pub full_kelly: f64,
+    pub half_kelly: f64,
+    pub quarter_kelly: f64,
 }
 
 /// 套利机会计算结果
@@ -146,6 +156,8 @@ pub struct PortfolioKellyResult {
     pub expected_log_growth: f64,
     /// 期望线性收益率 E[(W'-W)/W]
     pub expected_arithmetic_return: f64,
+    /// 按全凯利、半凯利、1/4 凯利组合仓位下注后的几何期望收益
+    pub geometric_expected_return: KellyGrowthRates,
     /// 可达状态中的最差场景资金倍数
     pub worst_case_multiplier: f64,
     /// 优化是否收敛

@@ -1,6 +1,6 @@
 //! 组合凯利（独立二项标的 / 相关情景）计算
 
-use crate::types::{PortfolioKellyResult, PortfolioLeg, PortfolioScenario};
+use crate::types::{KellyGrowthRates, PortfolioKellyResult, PortfolioLeg, PortfolioScenario};
 
 const MAX_TOTAL_ALLOCATION: f64 = 0.999_999;
 const MAX_ITERATIONS: usize = 800;
@@ -114,6 +114,32 @@ fn expected_arithmetic_return(allocations: &[f64], states: &[OutcomeState]) -> f
         .sum()
 }
 
+fn scale_allocations(allocations: &[f64], multiplier: f64) -> Vec<f64> {
+    allocations.iter().map(|a| a * multiplier).collect()
+}
+
+fn geometric_return_from_log_growth(expected_log_growth: f64) -> f64 {
+    if expected_log_growth.is_finite() {
+        expected_log_growth.exp() - 1.0
+    } else {
+        f64::NAN
+    }
+}
+
+fn geometric_growth_rates(allocations: &[f64], states: &[OutcomeState]) -> KellyGrowthRates {
+    let half_allocations = scale_allocations(allocations, 0.5);
+    let quarter_allocations = scale_allocations(allocations, 0.25);
+    let (full_log_growth, _) = objective_and_gradient(allocations, states);
+    let (half_log_growth, _) = objective_and_gradient(&half_allocations, states);
+    let (quarter_log_growth, _) = objective_and_gradient(&quarter_allocations, states);
+
+    KellyGrowthRates {
+        full_kelly: geometric_return_from_log_growth(full_log_growth),
+        half_kelly: geometric_return_from_log_growth(half_log_growth),
+        quarter_kelly: geometric_return_from_log_growth(quarter_log_growth),
+    }
+}
+
 fn project_to_simplex(values: &[f64], cap: f64) -> Vec<f64> {
     let mut non_negative: Vec<f64> = values.iter().map(|v| v.max(0.0)).collect();
     let sum: f64 = non_negative.iter().sum();
@@ -193,6 +219,11 @@ fn solve_with_states(
             total_allocation: 0.0,
             expected_log_growth: 0.0,
             expected_arithmetic_return: 0.0,
+            geometric_expected_return: KellyGrowthRates {
+                full_kelly: 0.0,
+                half_kelly: 0.0,
+                quarter_kelly: 0.0,
+            },
             worst_case_multiplier: 1.0,
             converged: true,
             iterations: 0,
@@ -247,6 +278,7 @@ fn solve_with_states(
     let (expected_log_growth, _) = objective_and_gradient(&allocations, states);
     let total_allocation: f64 = allocations.iter().sum();
     let expected_arithmetic_return = expected_arithmetic_return(&allocations, states);
+    let geometric_expected_return = geometric_growth_rates(&allocations, states);
 
     let worst_case_multiplier = states
         .iter()
@@ -259,6 +291,7 @@ fn solve_with_states(
         total_allocation,
         expected_log_growth,
         expected_arithmetic_return,
+        geometric_expected_return,
         worst_case_multiplier: if worst_case_multiplier.is_finite() {
             worst_case_multiplier
         } else {
@@ -308,6 +341,9 @@ mod tests {
         let diff = (result.allocations[0] - result.allocations[1]).abs();
         assert!(diff < 1e-6);
         assert!(result.allocations[0] > 0.0);
+        assert!(result.geometric_expected_return.full_kelly > 0.0);
+        assert!(result.geometric_expected_return.half_kelly > 0.0);
+        assert!(result.geometric_expected_return.quarter_kelly > 0.0);
     }
 
     #[test]
