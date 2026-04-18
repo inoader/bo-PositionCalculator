@@ -67,6 +67,12 @@ git push origin v1.0.2
 
 发布流程需要在仓库 Secrets 中配置具备 npm 发布权限的 `NPM_TOKEN`。
 
+## Agent Skill
+
+仓库内提供可复用的 Codex skill 文档：[skills/bo-cli/SKILL.md](skills/bo-cli/SKILL.md)。
+
+Agent 使用该 skill 时会优先通过 `bo --json` 调用本工具，适合自动化计算凯利仓位、套利、组合凯利、纳什均衡与资产等级。
+
 ## 使用方法
 
 ### 参数约束

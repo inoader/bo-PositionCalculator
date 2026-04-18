@@ -1,0 +1,4 @@
+interface:
+  display_name: "bo CLI"
+  short_description: "Use bo CLI calculators from agents."
+  default_prompt: "Use the bo CLI to calculate the requested Kelly sizing, arbitrage, portfolio, Nash equilibrium, or asset-level result. Prefer --json for automation."
